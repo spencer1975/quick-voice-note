@@ -1,0 +1,11 @@
+{
+  "id": "quick-voice-note",
+  "name": "Quick Voice Note",
+  "version": "0.5.7",
+  "minAppVersion": "1.5.0",
+  "description": "One-tap voice recording into today's daily note — audio saved to the vault, transcribed to readable text. Tap the mic (ribbon, floating mobile button, or a phone shortcut via obsidian://voice-note), speak, tap stop.",
+  "author": "Spencer Clark",
+  "isDesktopOnly": false,
+  "authorUrl": "https://www.spencerleeclark.com/",
+  "fundingUrl": "https://buymeacoffee.com/spencerleeclark"
+}

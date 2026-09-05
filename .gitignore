@@ -1,0 +1,11 @@
+# NEVER commit plugin data — it contains user API keys.
+data.json
+
+# OS / editor noise
+.DS_Store
+node_modules/
+*.log
+
+# local env files of any kind
+.env
+.env.*

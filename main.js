@@ -1,0 +1,770 @@
+'use strict';
+
+const obsidian = require('obsidian');
+const {
+  Plugin, PluginSettingTab, Setting, Modal, Notice, Platform,
+  normalizePath, requestUrl, TFile, TFolder, setIcon,
+} = obsidian;
+
+const PROTOCOL_ACTION = 'voice-note';
+
+const DEFAULTS = {
+  // What gets appended to the daily note. Empty placeholders collapse.
+  textTemplate: '- {{time}} {{text}}',
+  appendTemplate: '- {{time}} {{embed}} {{caption}}\n    - {{transcript}}',
+  heading: '',
+  timeFormat: 'HH:mm',
+  // Flow
+  openNoteAfterSave: false,
+  askForCaption: false,
+  autoStartFromUri: true,
+  showMobileButton: true,
+  // Where recordings go and how they are named (moment.js format).
+  recordingsFolder: 'Recordings',
+  fileNameFormat: '[Voice] YYYY-MM-DD HH-mm-ss',
+  // Daily note location
+  useDailyNotesSettings: true,
+  fallbackFolder: '',
+  fallbackFormat: 'YYYY-MM-DD',
+  fallbackTemplate: '',
+  // Transcription. A license key routes through the Quick Voice Cloud
+  // proxy (no other setup); otherwise bring your own OpenAI-compatible
+  // /audio/transcriptions endpoint + API key.
+  transcribe: false,
+  licenseKey: '',
+  cloudEndpoint: 'https://quick-voice-cloud.workers.dev/v1/audio/transcriptions',
+  transcriptionEndpoint: 'https://api.openai.com/v1/audio/transcriptions',
+  transcriptionApiKey: '',
+  transcriptionModel: 'whisper-1',
+  transcriptionLanguage: '',
+  transcriptionPrompt: '',
+};
+
+/* ------------------------------------------------------------------ *
+ * Pure helpers (exposed to the offline test harness)
+ * ------------------------------------------------------------------ */
+
+const MIME_CANDIDATES = [
+  'audio/mp4',
+  'audio/webm;codecs=opus',
+  'audio/webm',
+  'audio/ogg;codecs=opus',
+  'audio/ogg',
+];
+
+function pickMimeType(isTypeSupported) {
+  if (typeof isTypeSupported !== 'function') return '';
+  for (const m of MIME_CANDIDATES) {
+    try { if (isTypeSupported(m)) return m; } catch (e) { /* ignore */ }
+  }
+  return '';
+}
+
+function extForMime(mime) {
+  const m = String(mime || '').toLowerCase();
+  if (m.includes('mp4') || m.includes('aac') || m.includes('m4a')) return 'm4a';
+  if (m.includes('webm')) return 'webm';
+  if (m.includes('ogg') || m.includes('opus')) return 'ogg';
+  if (m.includes('wav')) return 'wav';
+  if (m.includes('mpeg') || m.includes('mp3')) return 'mp3';
+  return 'webm';
+}
+
+function formatDuration(ms) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return m + ':' + String(s).padStart(2, '0');
+}
+
+function joinPath(folder, name) {
+  const f = String(folder || '').replace(/^\/+|\/+$/g, '');
+  return normalizePath(f ? f + '/' + name : name);
+}
+
+// Replace {{name}} placeholders. Lines that end up as nothing but
+// whitespace or a bare list marker are dropped, so optional placeholders
+// (caption, transcript) collapse cleanly when empty.
+function renderTemplate(tpl, vars) {
+  const out = [];
+  for (const rawLine of String(tpl || '').split('\n')) {
+    const line = rawLine.replace(/\{\{\s*([a-zA-Z_]+)\s*\}\}/g, (_, k) =>
+      vars[k] == null ? '' : String(vars[k]));
+    const trimmed = line.replace(/\s+$/, '');
+    if (/^\s*(?:[-*+]|\d+[.)])?\s*$/.test(trimmed)) continue;
+    out.push(trimmed);
+  }
+  return out.join('\n');
+}
+
+function headingLevel(line) {
+  const m = /^(#{1,6})\s+\S/.exec(line);
+  return m ? m[1].length : 0;
+}
+
+function normalizeHeading(h) {
+  return String(h || '').trim().replace(/^#+\s*/, '').replace(/\s+#+\s*$/, '').trim();
+}
+
+// Append `text` to `content`, optionally at the end of a heading's section.
+function appendToNote(content, text, heading) {
+  const target = normalizeHeading(heading);
+  const body = String(content || '');
+  if (!target) {
+    const base = body.replace(/\s+$/, '');
+    return base ? base + '\n' + text + '\n' : text + '\n';
+  }
+  const lines = body.split('\n');
+  let hIdx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (headingLevel(lines[i]) && normalizeHeading(lines[i]) === target) { hIdx = i; break; }
+  }
+  if (hIdx < 0) {
+    const base = body.replace(/\s+$/, '');
+    const h = /^#/.test(String(heading).trim()) ? String(heading).trim() : '## ' + target;
+    return (base ? base + '\n\n' : '') + h + '\n' + text + '\n';
+  }
+  const level = headingLevel(lines[hIdx]);
+  let end = lines.length;
+  for (let i = hIdx + 1; i < lines.length; i++) {
+    const l = headingLevel(lines[i]);
+    if (l && l <= level) { end = i; break; }
+  }
+  let last = hIdx;
+  for (let i = end - 1; i > hIdx; i--) {
+    if (lines[i].trim() !== '') { last = i; break; }
+  }
+  const insertAt = last + 1;
+  const newLines = text.split('\n');
+  // Keep one blank line between the inserted text and a following heading.
+  const tail = lines.slice(insertAt);
+  while (tail.length && tail[0].trim() === '' && end !== lines.length) tail.shift();
+  const rest = end === lines.length ? [] : [''].concat(tail);
+  const result = lines.slice(0, insertAt).concat(newLines, rest).join('\n');
+  return result.endsWith('\n') ? result : result + '\n';
+}
+
+// Minimal daily-note template support: {{date}}, {{time}}, {{title}},
+// {{date:FORMAT}}, {{time:FORMAT}}.
+function applyNoteTemplate(tpl, now, title) {
+  return String(tpl || '').replace(/\{\{\s*(date|time|title)\s*(?::([^}]+))?\s*\}\}/g, (_, k, fmt) => {
+    if (k === 'title') return title;
+    if (k === 'date') return now.format(fmt || 'YYYY-MM-DD');
+    return now.format(fmt || 'HH:mm');
+  });
+}
+
+function uniquePath(exists, folder, base, ext) {
+  let p = joinPath(folder, base + '.' + ext);
+  let n = 1;
+  while (exists(p)) p = joinPath(folder, base + ' ' + (++n) + '.' + ext);
+  return p;
+}
+
+// Build a multipart/form-data body as an ArrayBuffer so it can go through
+// Obsidian's requestUrl (which sidesteps CORS on mobile).
+function buildMultipart(fields, file) {
+  const boundary = '----ObsidianQuickVoiceNote' + Math.random().toString(36).slice(2);
+  const enc = new TextEncoder();
+  const parts = [];
+  for (const [k, v] of Object.entries(fields)) {
+    if (v == null || v === '') continue;
+    parts.push(enc.encode('--' + boundary + '\r\nContent-Disposition: form-data; name="' + k + '"\r\n\r\n' + v + '\r\n'));
+  }
+  parts.push(enc.encode('--' + boundary + '\r\nContent-Disposition: form-data; name="' + file.field +
+    '"; filename="' + file.name.replace(/"/g, '') + '"\r\nContent-Type: ' + file.type + '\r\n\r\n'));
+  parts.push(new Uint8Array(file.data));
+  parts.push(enc.encode('\r\n--' + boundary + '--\r\n'));
+  const size = parts.reduce((n, p) => n + p.byteLength, 0);
+  const body = new Uint8Array(size);
+  let off = 0;
+  for (const p of parts) { body.set(p, off); off += p.byteLength; }
+  return { body: body.buffer, contentType: 'multipart/form-data; boundary=' + boundary };
+}
+
+function launcherUrls() {
+  return {
+    record: 'obsidian://' + PROTOCOL_ACTION + '?action=record',
+    text: 'obsidian://' + PROTOCOL_ACTION + '?text=',
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ * Recorder (MediaRecorder + a light level meter)
+ * ------------------------------------------------------------------ */
+
+class Recorder {
+  constructor() {
+    this.stream = null;
+    this.rec = null;
+    this.chunks = [];
+    this.startedAt = 0;
+    this.mimeType = '';
+    this.ctx = null;
+    this.analyser = null;
+    this.buf = null;
+  }
+
+  async start() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error('Microphone access is not available in this environment.');
+    }
+    if (typeof MediaRecorder === 'undefined') {
+      throw new Error('MediaRecorder is not supported here.');
+    }
+    this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const mime = pickMimeType(MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported.bind(MediaRecorder));
+    this.rec = mime ? new MediaRecorder(this.stream, { mimeType: mime }) : new MediaRecorder(this.stream);
+    this.mimeType = this.rec.mimeType || mime || '';
+    this.chunks = [];
+    this.rec.ondataavailable = (e) => { if (e.data && e.data.size > 0) this.chunks.push(e.data); };
+    this.rec.start(1000);
+    this.startedAt = Date.now();
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) {
+        this.ctx = new AC();
+        const src = this.ctx.createMediaStreamSource(this.stream);
+        this.analyser = this.ctx.createAnalyser();
+        this.analyser.fftSize = 512;
+        src.connect(this.analyser);
+        this.buf = new Uint8Array(this.analyser.fftSize);
+      }
+    } catch (e) { /* meter is cosmetic */ }
+  }
+
+  get elapsedMs() { return this.startedAt ? Date.now() - this.startedAt : 0; }
+
+  level() {
+    if (!this.analyser) return 0;
+    this.analyser.getByteTimeDomainData(this.buf);
+    let sum = 0;
+    for (let i = 0; i < this.buf.length; i++) { const v = (this.buf[i] - 128) / 128; sum += v * v; }
+    const rms = Math.sqrt(sum / this.buf.length);
+    return Math.min(1, rms * 3);
+  }
+
+  stop() {
+    return new Promise((resolve) => {
+      const rec = this.rec;
+      const finish = () => {
+        const blob = new Blob(this.chunks, { type: this.mimeType || (rec && rec.mimeType) || 'audio/webm' });
+        const duration = this.elapsedMs;
+        this.cleanup();
+        resolve({ blob, duration, mimeType: blob.type });
+      };
+      if (!rec || rec.state === 'inactive') { finish(); return; }
+      rec.onstop = finish;
+      try { rec.stop(); } catch (e) { finish(); }
+    });
+  }
+
+  cleanup() {
+    try { if (this.stream) this.stream.getTracks().forEach((t) => t.stop()); } catch (e) { /* ignore */ }
+    try { if (this.ctx) this.ctx.close(); } catch (e) { /* ignore */ }
+    this.stream = null; this.rec = null; this.ctx = null; this.analyser = null; this.startedAt = 0;
+  }
+
+  discard() {
+    try { if (this.rec && this.rec.state !== 'inactive') { this.rec.onstop = null; this.rec.stop(); } } catch (e) { /* ignore */ }
+    this.chunks = [];
+    this.cleanup();
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Recording modal (long-form field notes: audio saved, transcript optional)
+ * ------------------------------------------------------------------ */
+
+class RecordModal extends Modal {
+  constructor(plugin, opts) {
+    super(plugin.app);
+    this.plugin = plugin;
+    this.opts = opts || {};
+    this.recorder = new Recorder();
+    this.state = 'idle'; // idle | recording | review | saving
+    this.result = null;
+    this.timer = null;
+    this.raf = null;
+  }
+
+  onOpen() {
+    const { contentEl, modalEl } = this;
+    modalEl.addClass('qvn-modal');
+    contentEl.empty();
+    contentEl.addClass('qvn');
+
+    contentEl.createEl('h2', { text: 'Voice note', cls: 'qvn-title' });
+    this.statusEl = contentEl.createDiv({ cls: 'qvn-status', text: 'Tap to start recording' });
+    this.timerEl = contentEl.createDiv({ cls: 'qvn-timer', text: '0:00' });
+    const meter = contentEl.createDiv({ cls: 'qvn-meter' });
+    this.meterFill = meter.createDiv({ cls: 'qvn-meter-fill' });
+
+    this.bigBtn = contentEl.createEl('button', { cls: 'qvn-big', attr: { 'aria-label': 'Record' } });
+    setIcon(this.bigBtn, 'mic');
+    this.bigBtn.addEventListener('click', () => this.onBigButton());
+
+    this.reviewEl = contentEl.createDiv({ cls: 'qvn-review' });
+    this.reviewEl.hide();
+    this.captionEl = this.reviewEl.createEl('textarea', {
+      cls: 'qvn-caption', attr: { placeholder: 'Optional caption…', rows: '2' },
+    });
+    const row = this.reviewEl.createDiv({ cls: 'qvn-row' });
+    const saveBtn = row.createEl('button', { cls: 'mod-cta', text: "Save to today's note" });
+    saveBtn.addEventListener('click', () => this.save());
+    const discardBtn = row.createEl('button', { text: 'Discard' });
+    discardBtn.addEventListener('click', () => { this.result = null; this.close(); });
+
+    this.hintEl = contentEl.createDiv({ cls: 'qvn-hint' });
+    this.hintEl.setText(this.plugin.settings.askForCaption
+      ? 'Stop, add a caption, save.'
+      : 'Stop saves straight to today\'s daily note.');
+
+    if (this.opts.autoStart) this.startRecording();
+  }
+
+  async onBigButton() {
+    if (this.state === 'idle') return this.startRecording();
+    if (this.state === 'recording') return this.stopRecording();
+  }
+
+  async startRecording() {
+    if (this.state !== 'idle') return;
+    try {
+      await this.recorder.start();
+    } catch (e) {
+      console.error('[quick-voice-note] mic error', e);
+      this.statusEl.setText('Microphone unavailable: ' + (e && e.message ? e.message : e));
+      this.statusEl.addClass('qvn-error');
+      return;
+    }
+    this.state = 'recording';
+    this.bigBtn.addClass('is-recording');
+    this.bigBtn.setAttribute('aria-label', 'Stop');
+    setIcon(this.bigBtn, 'square');
+    this.statusEl.removeClass('qvn-error');
+    this.statusEl.setText('Recording…');
+    this.timer = window.setInterval(() => this.timerEl.setText(formatDuration(this.recorder.elapsedMs)), 250);
+    const tick = () => {
+      if (this.state !== 'recording') return;
+      this.meterFill.style.width = Math.round(this.recorder.level() * 100) + '%';
+      this.raf = window.requestAnimationFrame(tick);
+    };
+    tick();
+  }
+
+  async stopRecording() {
+    if (this.state !== 'recording') return;
+    this.state = 'review';
+    this.stopTimers();
+    this.bigBtn.removeClass('is-recording');
+    this.bigBtn.disabled = true;
+    this.statusEl.setText('Finishing…');
+    this.result = await this.recorder.stop();
+    this.timerEl.setText(formatDuration(this.result.duration));
+    this.meterFill.style.width = '0%';
+    if (!this.result.blob || this.result.blob.size === 0) {
+      this.statusEl.setText('Nothing was recorded.');
+      this.state = 'idle';
+      this.bigBtn.disabled = false;
+      setIcon(this.bigBtn, 'mic');
+      return;
+    }
+    if (this.plugin.settings.askForCaption) {
+      this.statusEl.setText('Recorded ' + formatDuration(this.result.duration));
+      this.bigBtn.hide();
+      this.reviewEl.show();
+      this.captionEl.focus();
+    } else {
+      await this.save();
+    }
+  }
+
+  async save() {
+    if (!this.result || this.state === 'saving') return;
+    this.state = 'saving';
+    this.reviewEl.hide();
+    this.bigBtn.hide();
+    this.statusEl.setText('Saving…');
+    try {
+      await this.plugin.saveRecording(this.result, this.captionEl.value.trim(), (msg) => this.statusEl.setText(msg));
+      this.result = null;
+      this.close();
+    } catch (e) {
+      console.error('[quick-voice-note] save failed', e);
+      this.statusEl.setText('Save failed: ' + (e && e.message ? e.message : e));
+      this.statusEl.addClass('qvn-error');
+      this.state = 'review';
+      this.reviewEl.show();
+    }
+  }
+
+  stopTimers() {
+    if (this.timer) { window.clearInterval(this.timer); this.timer = null; }
+    if (this.raf) { window.cancelAnimationFrame(this.raf); this.raf = null; }
+  }
+
+  onClose() {
+    this.stopTimers();
+    if (this.state === 'recording') this.recorder.discard();
+    this.recorder.cleanup();
+    this.contentEl.empty();
+    this.plugin.activeModal = null;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Plugin
+ * ------------------------------------------------------------------ */
+
+class QuickVoiceNotePlugin extends Plugin {
+  async onload() {
+    this.settings = Object.assign({}, DEFAULTS, await this.loadData());
+    this.activeModal = null;
+
+    this.addRibbonIcon('mic', 'Record voice note', () => this.openRecorder({ autoStart: false }));
+
+    // On mobile the ribbon lives in a drawer; give recording an obvious
+    // one-tap home: a floating mic button that starts recording immediately.
+    // It exists only while a note is front and center — it grows in from a
+    // dot when you land on a note, shrinks away when a drawer or another
+    // pane takes over, and slides down while the note scrolls.
+    if (Platform.isMobile && this.settings.showMobileButton) {
+      // The button lives INSIDE the note view (not the app window), so
+      // drawers slide over it and it only exists where the note does.
+      const fab = createEl('button', { cls: 'qvn-fab qvn-fab-off', attr: { 'aria-label': 'Record voice note' } });
+      setIcon(fab, 'mic');
+      fab.addEventListener('click', () => this.openRecorder({ autoStart: true }));
+      let settle = null;
+      const onScroll = () => {
+        if (fab.hasClass('qvn-fab-off')) return;
+        fab.addClass('qvn-fab-hidden');
+        if (settle) window.clearTimeout(settle);
+        settle = window.setTimeout(() => fab.removeClass('qvn-fab-hidden'), 700);
+      };
+      const attach = () => {
+        const view = this.app.workspace.getActiveViewOfType(obsidian.MarkdownView);
+        if (view) {
+          if (fab.parentElement !== view.containerEl) {
+            fab.addClass('qvn-fab-off');
+            view.containerEl.appendChild(fab);
+            // Next frame so the dot-grow transition plays after insertion.
+            window.requestAnimationFrame(() => fab.removeClass('qvn-fab-off'));
+          } else {
+            fab.removeClass('qvn-fab-off');
+          }
+        } else {
+          fab.addClass('qvn-fab-off');
+        }
+      };
+      this.registerEvent(this.app.workspace.on('active-leaf-change', attach));
+      this.registerEvent(this.app.workspace.on('layout-change', attach));
+      // Capture phase catches scrolls inside the editor's nested scroller.
+      this.registerDomEvent(document, 'scroll', onScroll, { capture: true, passive: true });
+      this.app.workspace.onLayoutReady(attach);
+      this.register(() => { if (settle) window.clearTimeout(settle); fab.remove(); });
+    }
+
+    this.addCommand({
+      id: 'record',
+      name: 'Record voice note',
+      callback: () => this.openRecorder({ autoStart: false }),
+    });
+    this.addCommand({
+      id: 'record-now',
+      name: 'Start recording immediately',
+      callback: () => this.openRecorder({ autoStart: true }),
+    });
+    this.addCommand({
+      id: 'open-daily-note',
+      name: "Open today's daily note",
+      callback: async () => {
+        const f = await this.getOrCreateDailyNote();
+        await this.app.workspace.getLeaf(false).openFile(f);
+      },
+    });
+    this.addCommand({
+      id: 'copy-launcher-url',
+      name: 'Copy launcher URL (for iOS Shortcuts / Android shortcuts)',
+      callback: async () => {
+        await navigator.clipboard.writeText(launcherUrls().record);
+        new Notice('Copied ' + launcherUrls().record);
+      },
+    });
+
+    // obsidian://voice-note?text=...  -> append text straight to today's note
+    // obsidian://voice-note           -> open recorder (auto-start per setting)
+    this.registerObsidianProtocolHandler(PROTOCOL_ACTION, async (params) => {
+      try {
+        if (params.text != null && String(params.text).trim() !== '') {
+          const file = await this.appendText(String(params.text));
+          if (params.open === '1' || params.open === 'true') {
+            await this.app.workspace.getLeaf(false).openFile(file);
+          }
+          return;
+        }
+        const auto = params.autostart != null
+          ? (params.autostart === '1' || params.autostart === 'true')
+          : this.settings.autoStartFromUri;
+        this.openRecorder({ autoStart: auto });
+      } catch (e) {
+        console.error('[quick-voice-note] protocol handler', e);
+        new Notice('Quick Voice Note: ' + (e && e.message ? e.message : e));
+      }
+    });
+
+    this.addSettingTab(new QuickVoiceNoteSettingTab(this.app, this));
+  }
+
+  onunload() {
+    if (this.activeModal) this.activeModal.close();
+  }
+
+  async saveSettings() { await this.saveData(this.settings); }
+
+  openRecorder(opts) {
+    if (this.activeModal) {
+      // Second launch while open: treat as "stop" if recording, else focus.
+      if (this.activeModal.state === 'recording') this.activeModal.stopRecording();
+      return this.activeModal;
+    }
+    this.activeModal = new RecordModal(this, opts);
+    this.activeModal.open();
+    return this.activeModal;
+  }
+
+  now() { return obsidian.moment(); }
+
+  /* ---- Daily note ---- */
+
+  getDailyNoteConfig() {
+    const s = this.settings;
+    if (s.useDailyNotesSettings) {
+      try {
+        const dn = this.app.internalPlugins && this.app.internalPlugins.getPluginById('daily-notes');
+        if (dn && dn.enabled) {
+          const o = (dn.instance && dn.instance.options) || {};
+          return { folder: o.folder || '', format: o.format || 'YYYY-MM-DD', template: o.template || '' };
+        }
+      } catch (e) { /* fall through */ }
+      try {
+        const pn = this.app.plugins && this.app.plugins.getPlugin('periodic-notes');
+        const d = pn && pn.settings && pn.settings.daily;
+        if (d && d.enabled) {
+          return { folder: d.folder || '', format: d.format || 'YYYY-MM-DD', template: d.template || '' };
+        }
+      } catch (e) { /* fall through */ }
+    }
+    return { folder: s.fallbackFolder || '', format: s.fallbackFormat || 'YYYY-MM-DD', template: s.fallbackTemplate || '' };
+  }
+
+  async ensureFolder(folder) {
+    const f = String(folder || '').replace(/^\/+|\/+$/g, '');
+    if (!f) return;
+    const parts = f.split('/');
+    let cur = '';
+    for (const p of parts) {
+      cur = cur ? cur + '/' + p : p;
+      const existing = this.app.vault.getAbstractFileByPath(normalizePath(cur));
+      if (existing instanceof TFolder) continue;
+      if (existing) throw new Error('"' + cur + '" exists but is not a folder');
+      await this.app.vault.createFolder(normalizePath(cur));
+    }
+  }
+
+  async getOrCreateDailyNote() {
+    const cfg = this.getDailyNoteConfig();
+    const now = this.now();
+    const title = now.format(cfg.format);
+    const path = joinPath(cfg.folder, title + '.md');
+    const existing = this.app.vault.getAbstractFileByPath(path);
+    if (existing instanceof TFile) return existing;
+    if (existing) throw new Error('"' + path + '" exists but is not a file');
+    await this.ensureFolder(cfg.folder);
+    let content = '';
+    if (cfg.template) {
+      let tp = normalizePath(cfg.template);
+      if (!/\.md$/i.test(tp)) tp += '.md';
+      const tf = this.app.vault.getAbstractFileByPath(tp);
+      if (tf instanceof TFile) content = applyNoteTemplate(await this.app.vault.read(tf), now, title);
+    }
+    return this.app.vault.create(path, content);
+  }
+
+  async appendToDailyNote(text) {
+    const file = await this.getOrCreateDailyNote();
+    const heading = this.settings.heading;
+    if (typeof this.app.vault.process === 'function') {
+      await this.app.vault.process(file, (data) => appendToNote(data, text, heading));
+    } else {
+      const data = await this.app.vault.read(file);
+      await this.app.vault.modify(file, appendToNote(data, text, heading));
+    }
+    return file;
+  }
+
+  async appendText(text) {
+    const now = this.now();
+    const line = renderTemplate(this.settings.textTemplate, {
+      time: now.format(this.settings.timeFormat),
+      date: now.format('YYYY-MM-DD'),
+      text: text.trim(),
+    });
+    const file = await this.appendToDailyNote(line);
+    new Notice('Added to ' + file.basename);
+    return file;
+  }
+
+  /* ---- Recording ---- */
+
+  async saveRecording(result, caption, progress) {
+    const report = progress || (() => {});
+    const s = this.settings;
+    const now = this.now();
+    const ext = extForMime(result.mimeType);
+    const base = now.format(s.fileNameFormat || DEFAULTS.fileNameFormat).replace(/[\\/:*?"<>|]/g, '-');
+    await this.ensureFolder(s.recordingsFolder);
+    const path = uniquePath((p) => !!this.app.vault.getAbstractFileByPath(p), s.recordingsFolder, base, ext);
+    const data = await result.blob.arrayBuffer();
+    report('Saving audio…');
+    const audioFile = await this.app.vault.createBinary(path, data);
+
+    let transcript = '';
+    if (s.transcribe) {
+      report('Transcribing…');
+      try {
+        transcript = await this.transcribe(data, audioFile.name, result.mimeType);
+      } catch (e) {
+        console.error('[quick-voice-note] transcription failed', e);
+        new Notice('Transcription failed: ' + (e && e.message ? e.message : e));
+      }
+    }
+
+    report('Appending to daily note…');
+    const line = renderTemplate(s.appendTemplate, {
+      time: now.format(s.timeFormat),
+      date: now.format('YYYY-MM-DD'),
+      file: audioFile.path,
+      name: audioFile.name,
+      embed: '![[' + audioFile.path + ']]',
+      link: '[[' + audioFile.path + ']]',
+      caption: caption || '',
+      transcript: transcript.replace(/\s+/g, ' ').trim(),
+      duration: formatDuration(result.duration),
+    });
+    const note = await this.appendToDailyNote(line);
+    new Notice('Voice note saved to ' + note.basename);
+    if (s.openNoteAfterSave) {
+      await this.app.workspace.getLeaf(false).openFile(note);
+    }
+    return { audioFile, note, transcript };
+  }
+
+  async transcribe(data, fileName, mimeType) {
+    const s = this.settings;
+    // A license key wins: route through the cloud proxy with zero other setup.
+    const useCloud = !!(s.licenseKey && s.licenseKey.trim());
+    const endpoint = useCloud ? (s.cloudEndpoint || DEFAULTS.cloudEndpoint) : s.transcriptionEndpoint;
+    const apiKey = useCloud ? s.licenseKey.trim() : s.transcriptionApiKey;
+    if (!endpoint) throw new Error('No transcription endpoint configured');
+    const { body, contentType } = buildMultipart({
+      model: useCloud ? 'whisper-large-v3-turbo' : (s.transcriptionModel || 'whisper-1'),
+      language: s.transcriptionLanguage || '',
+      prompt: s.transcriptionPrompt || '',
+      response_format: 'json',
+    }, { field: 'file', name: fileName, type: mimeType || 'application/octet-stream', data });
+    const headers = { 'Content-Type': contentType };
+    if (apiKey) headers.Authorization = 'Bearer ' + apiKey;
+    const resp = await requestUrl({ url: endpoint, method: 'POST', headers, body, throw: false });
+    if (resp.status < 200 || resp.status >= 300) {
+      let msg = 'HTTP ' + resp.status;
+      try { msg += ': ' + (resp.json && resp.json.error && resp.json.error.message || resp.text.slice(0, 200)); } catch (e) { /* ignore */ }
+      throw new Error(msg);
+    }
+    const json = resp.json || JSON.parse(resp.text);
+    return String(json.text || '');
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Settings
+ * ------------------------------------------------------------------ */
+
+class QuickVoiceNoteSettingTab extends PluginSettingTab {
+  constructor(app, plugin) { super(app, plugin); this.plugin = plugin; }
+
+  display() {
+    const { containerEl } = this;
+    const p = this.plugin;
+    const s = p.settings;
+    containerEl.empty();
+
+    const text = (el, name, desc, key, placeholder) => new Setting(el).setName(name).setDesc(desc)
+      .addText((t) => t.setPlaceholder(placeholder || '').setValue(s[key]).onChange(async (v) => { s[key] = v; await p.saveSettings(); }));
+    const toggle = (el, name, desc, key) => new Setting(el).setName(name).setDesc(desc)
+      .addToggle((t) => t.setValue(!!s[key]).onChange(async (v) => { s[key] = v; await p.saveSettings(); }));
+    const area = (el, name, desc, key) => new Setting(el).setName(name).setDesc(desc).setClass('qvn-setting-area')
+      .addTextArea((t) => { t.setValue(s[key]).onChange(async (v) => { s[key] = v; await p.saveSettings(); }); t.inputEl.rows = 3; });
+
+    /* Essentials */
+    const info = containerEl.createDiv({ cls: 'qvn-info' });
+    info.createEl('p', { text: 'Tap the mic (ribbon, or the floating button on mobile), speak as long as you like, tap stop. The audio is saved to your vault and — with transcription on — appended to today\'s daily note as readable text. Defaults cover the rest; tweak them under Advanced if you ever need to.' });
+
+    toggle(containerEl, 'Transcribe recordings', 'Long recordings become readable text in the daily note.', 'transcribe');
+    new Setting(containerEl).setName('License key').setDesc('The easy path: one key, nothing else to set up. Leave blank if you bring your own API key under Advanced → Transcription service.')
+      .addText((t) => { t.inputEl.type = 'password'; t.setValue(s.licenseKey).onChange(async (v) => { s.licenseKey = v.trim(); await p.saveSettings(); }); });
+
+    /* Phone shortcuts */
+    new Setting(containerEl).setName('Phone shortcut').setHeading();
+    const info2 = containerEl.createDiv({ cls: 'qvn-info' });
+    info2.createEl('p', { text: 'Point a one-tap shortcut (Action Button, Control Center, home screen, NFC tag) at this URL: Obsidian opens, recording starts immediately, one tap stops and saves.' });
+    const urls = launcherUrls();
+    new Setting(containerEl).setName('Record URL').setDesc(urls.record)
+      .addButton((b) => b.setButtonText('Copy').onClick(async () => { await navigator.clipboard.writeText(urls.record); new Notice('Copied'); }));
+
+    /* Advanced — everything has a working default */
+    const det = containerEl.createEl('details', { cls: 'qvn-advanced' });
+    det.createEl('summary', { text: 'Advanced' });
+
+    new Setting(det).setName('Behavior').setHeading();
+    toggle(det, "Open today's note after saving", '', 'openNoteAfterSave');
+    toggle(det, 'Ask for a caption before saving a recording', '', 'askForCaption');
+    toggle(det, 'Auto-start recording when launched from a URL', 'Override per URL with autostart=1 or 0.', 'autoStartFromUri');
+    toggle(det, 'Floating record button on mobile', 'Takes effect after the plugin reloads.', 'showMobileButton');
+
+    new Setting(det).setName('Files and formatting').setHeading();
+    text(det, 'Recordings folder', '', 'recordingsFolder', 'Recordings');
+    text(det, 'Recording file name', 'moment.js format; wrap literal text in [brackets].', 'fileNameFormat', DEFAULTS.fileNameFormat);
+    text(det, 'Append under heading', 'E.g. "## Voice notes". Blank appends at the end of the note.', 'heading', '');
+    text(det, 'Time format', 'moment.js format for {{time}}.', 'timeFormat', 'HH:mm');
+    area(det, 'Text template', 'For text sent via the obsidian://voice-note?text= URL. Placeholders: {{time}} {{date}} {{text}}.', 'textTemplate');
+    area(det, 'Recording template', 'Placeholders: {{time}} {{date}} {{embed}} {{link}} {{file}} {{name}} {{caption}} {{transcript}} {{duration}}. Empty lines collapse.', 'appendTemplate');
+
+    new Setting(det).setName('Daily note location').setHeading();
+    toggle(det, 'Use the Daily Notes plugin settings', 'Turn off to set folder, format and template here.', 'useDailyNotesSettings');
+    text(det, 'Fallback folder', '', 'fallbackFolder', '');
+    text(det, 'Fallback date format', '', 'fallbackFormat', 'YYYY-MM-DD');
+    text(det, 'Fallback template file', '', 'fallbackTemplate', 'Templates/Daily');
+
+    new Setting(det).setName('Transcription service (bring your own)').setHeading();
+    const info3 = det.createDiv({ cls: 'qvn-info' });
+    info3.createEl('p', { text: 'Used only when no license key is set above. Point at any OpenAI-compatible /audio/transcriptions endpoint (OpenAI, Groq, a local Whisper server) with your own API key.' });
+    new Setting(det).setName('API key').setDesc('Stored in this vault\'s plugin data.')
+      .addText((t) => { t.inputEl.type = 'password'; t.setValue(s.transcriptionApiKey).onChange(async (v) => { s.transcriptionApiKey = v.trim(); await p.saveSettings(); }); });
+    text(det, 'Endpoint', '', 'transcriptionEndpoint', DEFAULTS.transcriptionEndpoint);
+    text(det, 'Model', '', 'transcriptionModel', 'whisper-large-v3-turbo');
+    text(det, 'Language', 'ISO code, e.g. en. Blank auto-detects.', 'transcriptionLanguage', '');
+    text(det, 'Vocabulary hint', 'Optional prompt for names and jargon.', 'transcriptionPrompt', '');
+    text(det, 'Cloud endpoint', 'Where the license key sends audio. Only change if self-hosting the proxy.', 'cloudEndpoint', DEFAULTS.cloudEndpoint);
+  }
+}
+
+module.exports = QuickVoiceNotePlugin;
+
+// Exposed for the offline test harness in tools/; unused by Obsidian.
+module.exports.__test = {
+  DEFAULTS, PROTOCOL_ACTION, MIME_CANDIDATES,
+  pickMimeType, extForMime, formatDuration, joinPath, renderTemplate,
+  appendToNote, applyNoteTemplate, uniquePath, buildMultipart, launcherUrls,
+  normalizeHeading, headingLevel,
+};

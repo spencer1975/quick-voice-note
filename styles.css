@@ -1,0 +1,147 @@
+/* Quick Voice Note */
+
+.qvn-modal {
+  max-width: 420px;
+  width: 92vw;
+}
+
+.qvn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0 4px;
+  text-align: center;
+}
+
+.qvn-title { margin: 0; }
+
+.qvn-status {
+  color: var(--text-muted);
+  min-height: 1.4em;
+}
+.qvn-status.qvn-error { color: var(--text-error); }
+
+/* Floating record button (mobile) — lives inside the note view, centered,
+   grows in from a dot, hides on scroll. Drawers naturally cover it. */
+.workspace-leaf-content:has(> .qvn-fab) { position: relative; }
+.qvn-fab {
+  position: absolute;
+  left: 50%;
+  /* The note pane runs underneath the mobile toolbar; clear it + safe area. */
+  bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(168, 85, 247, 0.95) !important; /* bright purple, whisper of translucency */
+  color: #ffffff !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 16px rgba(168, 85, 247, 0.35);
+  z-index: 10; /* above the editor, below Obsidian's drawers/overlays */
+  padding: 0;
+  transform: translateX(-50%) scale(1);
+  /* Springy: grows from a dot when shown, shrinks back to one when hidden. */
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.2s ease;
+}
+.qvn-fab svg { width: 36px; height: 36px; color: #ffffff !important; }
+.qvn-fab:active { transform: translateX(-50%) scale(0.94); background: #9333ea !important; }
+
+/* Not on a note (drawer, backlinks, settings…): collapsed to a dot, gone. */
+.qvn-fab.qvn-fab-off {
+  opacity: 0;
+  transform: translateX(-50%) scale(0);
+  pointer-events: none;
+}
+
+/* Slides down + fades while the note scrolls; returns when scrolling settles. */
+.qvn-fab.qvn-fab-hidden {
+  opacity: 0;
+  transform: translateX(-50%) translateY(90px) scale(0.5);
+  pointer-events: none;
+}
+
+/* Recorder */
+.qvn-timer {
+  font-size: 2.4em;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.qvn-meter {
+  width: 70%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--background-modifier-border);
+  overflow: hidden;
+}
+.qvn-meter-fill {
+  height: 100%;
+  width: 0;
+  background: var(--interactive-accent);
+  transition: width 60ms linear;
+}
+
+.qvn-big {
+  width: 112px;
+  height: 112px;
+  border-radius: 50%;
+  border: none;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: var(--shadow-s);
+  padding: 0;
+}
+.qvn-big svg { width: 44px; height: 44px; }
+.qvn-big:active { transform: scale(0.96); }
+.qvn-big.is-recording {
+  background: var(--color-red);
+  animation: qvn-pulse 1.4s ease-in-out infinite;
+}
+.qvn-big:disabled { opacity: 0.5; cursor: default; animation: none; }
+
+@keyframes qvn-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(var(--color-red-rgb), 0.45); }
+  70%  { box-shadow: 0 0 0 18px rgba(var(--color-red-rgb), 0); }
+  100% { box-shadow: 0 0 0 0 rgba(var(--color-red-rgb), 0); }
+}
+
+.qvn-review {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.qvn-caption { width: 100%; resize: vertical; }
+
+.qvn-row { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; width: 100%; }
+.qvn-row button { flex: 1 1 140px; min-height: 40px; }
+
+.qvn-hint { color: var(--text-faint); font-size: var(--font-ui-smaller); }
+
+.is-mobile .qvn-big { width: 140px; height: 140px; }
+.is-mobile .qvn-big svg { width: 56px; height: 56px; }
+.is-mobile .qvn-timer { font-size: 3em; }
+
+/* Settings */
+.qvn-advanced { margin-top: 24px; }
+.qvn-advanced > summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 6px 0;
+  border-top: 1px solid var(--background-modifier-border);
+}
+.qvn-advanced[open] > summary { color: var(--text-normal); }
+
+.qvn-info { color: var(--text-muted); font-size: var(--font-ui-small); margin-bottom: 8px; }
+.qvn-info ul { padding-left: 1.2em; }
+.qvn-setting-area .setting-item-control { width: 100%; }
+.qvn-setting-area textarea { width: 100%; font-family: var(--font-monospace); font-size: var(--font-ui-small); }
