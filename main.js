@@ -1,6 +1,7 @@
 'use strict';
 
 const obsidian = require('obsidian');
+const TRIAL_URL = 'https://quickvoicenote.com/trial';
 const {
   Plugin, PluginSettingTab, Setting, Modal, Notice, Platform,
   normalizePath, requestUrl, TFile, TFolder, setIcon,
@@ -878,12 +879,29 @@ class QuickVoiceNoteSettingTab extends PluginSettingTab {
     info.createEl('p', { text: 'Tap the mic (ribbon, or the red mic in the note header on mobile), speak as long as you like, tap stop. The audio is saved to your vault and — with transcription on — added to your note as readable text. Defaults cover the rest; tweak them under Advanced if you ever need to.' });
 
     toggle(containerEl, 'Transcribe recordings', 'Long recordings become readable text in the note.', 'transcribe');
-    const licDesc = document.createDocumentFragment();
-    licDesc.append('The easy path: one key, nothing else to set up. ');
-    licDesc.createEl('a', { text: 'Get a key', href: 'https://quickvoicenote.com/#pricing' });
-    licDesc.append(' or leave blank and bring your own API key under Advanced → Transcription service.');
-    new Setting(containerEl).setName('License key').setDesc(licDesc)
-      .addText((t) => { t.inputEl.type = 'password'; t.setValue(s.licenseKey).onChange(async (v) => { s.licenseKey = v.trim(); await p.saveSettings(); }); });
+
+    /* Transcription: cloud key or bring your own */
+    new Setting(containerEl).setName('Transcription').setHeading();
+    let advanced = null; // the Advanced <details>, assigned below
+    const plan = containerEl.createDiv({ cls: 'qvn-plan' });
+    plan.createDiv({ cls: 'qvn-plan-title', text: 'Cloud key' });
+    plan.createDiv({ cls: 'qvn-plan-price', text: 'A$9 / month · 3-day free trial · cancel anytime' });
+    plan.createEl('p', { text: 'No API accounts, nothing to configure. Start a trial, paste the license key from your email below, and transcription just works.' });
+    const actions = plan.createDiv({ cls: 'qvn-plan-actions' });
+    new obsidian.ButtonComponent(actions).setButtonText('Start free trial').setCta().onClick(() => window.open(TRIAL_URL));
+    const byo = actions.createEl('a', { text: 'Or bring your own API key', href: '#' });
+    byo.addEventListener('click', (e) => { e.preventDefault(); if (advanced) { advanced.open = true; advanced.scrollIntoView({ behavior: 'smooth' }); } });
+    const statusEl = plan.createDiv({ cls: 'qvn-plan-status' });
+    const refreshStatus = () => {
+      statusEl.className = 'qvn-plan-status';
+      if (s.licenseKey && s.licenseKey.trim()) { statusEl.addClass('is-ok'); statusEl.setText('Cloud key set — recordings are transcribed through Quick Voice Note Cloud.'); }
+      else if (s.transcriptionApiKey && s.transcriptionApiKey.trim()) { statusEl.addClass('is-ok'); statusEl.setText('Using your own API key (see Advanced → Transcription service).'); }
+      else { statusEl.addClass('is-warn'); statusEl.setText('No key yet — recordings are saved but not transcribed. Start a trial or add your own key.'); }
+    };
+    this.refreshStatus = refreshStatus;
+    refreshStatus();
+    new Setting(containerEl).setName('License key').setDesc('From your Quick Voice Note Cloud welcome email. Leave blank if you use your own API key.')
+      .addText((t) => { t.inputEl.type = 'password'; t.setPlaceholder('XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX'); t.setValue(s.licenseKey).onChange(async (v) => { s.licenseKey = v.trim(); await p.saveSettings(); refreshStatus(); }); });
 
     /* Where and how it lands */
     new Setting(containerEl).setName('In the note').setHeading();
@@ -955,6 +973,7 @@ class QuickVoiceNoteSettingTab extends PluginSettingTab {
 
     /* Advanced — everything has a working default */
     const det = containerEl.createEl('details', { cls: 'qvn-advanced' });
+    advanced = det;
     det.createEl('summary', { text: 'Advanced' });
 
     new Setting(det).setName('Behavior').setHeading();
@@ -986,7 +1005,7 @@ class QuickVoiceNoteSettingTab extends PluginSettingTab {
     const info3 = det.createDiv({ cls: 'qvn-info' });
     info3.createEl('p', { text: 'Used only when no license key is set above. Point at any OpenAI-compatible /audio/transcriptions endpoint (OpenAI, Groq, a local Whisper server) with your own API key.' });
     new Setting(det).setName('API key').setDesc('Stored in this vault\'s plugin data.')
-      .addText((t) => { t.inputEl.type = 'password'; t.setValue(s.transcriptionApiKey).onChange(async (v) => { s.transcriptionApiKey = v.trim(); await p.saveSettings(); }); });
+      .addText((t) => { t.inputEl.type = 'password'; t.setValue(s.transcriptionApiKey).onChange(async (v) => { s.transcriptionApiKey = v.trim(); await p.saveSettings(); if (this.refreshStatus) this.refreshStatus(); }); });
     text(det, 'Endpoint', '', 'transcriptionEndpoint', DEFAULTS.transcriptionEndpoint);
     text(det, 'Model', '', 'transcriptionModel', 'whisper-large-v3-turbo');
     text(det, 'Language', 'ISO code, e.g. en. Blank auto-detects.', 'transcriptionLanguage', '');

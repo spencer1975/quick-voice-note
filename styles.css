@@ -151,3 +151,14 @@
 .qvn-info ul { padding-left: 1.2em; }
 .qvn-setting-area .setting-item-control { width: 100%; }
 .qvn-setting-area textarea { width: 100%; font-family: var(--font-monospace); font-size: var(--font-ui-small); }
+
+/* Cloud key plan card in settings */
+.qvn-plan { border: 1px solid var(--background-modifier-border); border-radius: var(--radius-m); padding: 14px 16px; margin: 6px 0 12px; background: var(--background-secondary); }
+.qvn-plan-title { font-weight: var(--font-semibold); font-size: var(--font-ui-medium); }
+.qvn-plan-price { color: var(--color-accent); font-size: var(--font-ui-small); margin-top: 2px; }
+.qvn-plan p { color: var(--text-muted); font-size: var(--font-ui-small); margin: 8px 0 12px; }
+.qvn-plan-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.qvn-plan-actions a { font-size: var(--font-ui-small); }
+.qvn-plan-status { margin-top: 12px; font-size: var(--font-ui-small); padding-top: 10px; border-top: 1px solid var(--background-modifier-border); }
+.qvn-plan-status.is-ok { color: var(--color-green); }
+.qvn-plan-status.is-warn { color: var(--color-orange); }
