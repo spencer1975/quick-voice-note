@@ -6,6 +6,9 @@
 
 <p align="center"><strong>Press a button. Talk as long as you like. Read it in today's note.</strong></p>
 
+<p align="center"><a href="https://quickvoicenote.com"><img src="assets/hero.png" width="820" alt="Quick Voice Note: a daily note on a phone with the red record button in the header and two transcribed voice memos" /></a></p>
+<p align="center"><a href="https://quickvoicenote.com">quickvoicenote.com</a></p>
+
 Long-form voice memos for Obsidian. One tap starts a recording; stopping saves the
 audio to your vault and appends a timestamped, transcribed entry to today's
 daily note:
@@ -60,10 +63,10 @@ filed into your daily notes.
 
 ## Install
 
-Until the plugin is accepted into the community directory: copy `main.js`,
-`manifest.json`, and `styles.css` into
-`<your vault>/.obsidian/plugins/quick-voice-note/`, then enable **Quick Voice
-Note** in Settings → Community plugins.
+Settings → Community plugins → Browse → search **Quick Voice Note** (once the
+directory listing is live). Manual install: copy `main.js`, `manifest.json`,
+and `styles.css` from the [latest release](https://github.com/spencer1975/quick-voice-note/releases/latest)
+into `<your vault>/.obsidian/plugins/quick-voice-note/`, then enable the plugin.
 
 ## Privacy
 
