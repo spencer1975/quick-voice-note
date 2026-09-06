@@ -9,7 +9,7 @@
 <link rel="icon" href="img/icon-64.png" type="image/png">
 <link rel="apple-touch-icon" href="img/icon-256.png">
 <meta property="og:title" content="Quick Voice Note">
-<meta property="og:description" content="Press a button. Talk as long as you like. Read it in tonight's note. Voice field notes for Obsidian.">
+<meta property="og:description" content="Press a button. Talk as long as you like. Read it in tonight's note. Voice memos for Obsidian, transcribed into your daily note.">
 <meta property="og:url" content="https://quickvoicenote.com/">
 <meta property="og:image" content="https://quickvoicenote.com/img/icon-512.png">
 <meta property="og:type" content="website">
@@ -56,7 +56,9 @@
   nav ul a { color: var(--muted); text-decoration: none; transition: color .2s; }
   nav ul a:hover { color: var(--text); }
   nav ul .cta a { color: var(--text); border: 1px solid var(--line-strong); padding: 8px 16px; border-radius: 999px; }
-  @media (max-width: 720px) { nav ul li:not(.cta) { display: none; } }
+  nav ul .cta a { white-space: nowrap; display: inline-block; }
+  nav ul .cta .short { display: none; }
+  @media (max-width: 720px) { nav ul li:not(.cta) { display: none; } nav ul .cta .long { display: none; } nav ul .cta .short { display: inline; } }
 
   /* ---- hero ---- */
   .hero { position: relative; min-height: 100svh; display: grid; align-items: center; overflow: hidden; padding: 120px 0 80px; isolation: isolate; }
@@ -229,6 +231,46 @@
     .support { padding: 44px 28px; }
     .hero-fade { background: linear-gradient(180deg, var(--ground) 0%, rgba(14,12,20,.85) 40%, rgba(14,12,20,.8) 100%); }
   }
+  @media (max-width: 720px) {
+    body { font-size: 16px; }
+    .wrap { width: min(1120px, 100% - 40px); }
+    nav { padding: 14px 0; }
+    nav.scrolled { padding: 10px 0; }
+    nav .wrap { gap: 10px; }
+    .mark { font-size: 16px; gap: 9px; white-space: nowrap; }
+    .mark img { width: 26px; height: 26px; }
+    nav ul .cta a { padding: 7px 13px; font-size: 14px; }
+    .hero { min-height: auto; padding: 88px 0 48px; }
+    .hero .wrap { gap: 34px; }
+    .promptbar { font-size: 12.5px; margin-bottom: 14px; }
+    h1 { font-size: clamp(38px, 11.6vw, 50px); line-height: 1; margin-bottom: 16px; }
+    .lede { font-size: 16.5px; margin-bottom: 20px; }
+    .cta-row { gap: 10px; }
+    .cta-row .btn { flex: 1 1 100%; justify-content: center; text-align: center; }
+    .hero-note { font-size: 13px; margin-top: 14px; }
+    .hero-fade { background: linear-gradient(180deg, var(--ground) 0%, rgba(14,12,20,.55) 40%, rgba(14,12,20,.7) 100%); }
+    .wave { opacity: .42; padding: 0 2vw; gap: 4px; }
+    .phone { width: 236px; border-radius: 40px; padding: 9px; }
+    .float { font-size: 11px; padding: 6px 10px; }
+    .float.a { right: 0; } .float.b { left: 0; }
+    section { padding: 80px 0 20px; }
+    h2 { font-size: clamp(28px, 8.4vw, 38px); }
+    .sub { font-size: 16.5px; }
+    .card { padding: 22px 20px; border-radius: 16px; }
+    .card .ico { margin-bottom: 16px; }
+    .steps .n { margin-bottom: 18px; }
+    .showcase > *, .split > *, .hero .wrap > * { min-width: 0; }
+    .tabs { max-width: 100%; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 6px; scrollbar-width: none; }
+    .tabs::-webkit-scrollbar { display: none; }
+    .tabs button { flex: 0 0 auto; white-space: nowrap; }
+    .app .doc { padding: 20px 18px 22px; font-size: 14px; min-height: 0; }
+    .app .doc h5 { font-size: 22px; }
+    pre { margin-top: 28px; padding: 14px 16px; font-size: 12.5px; }
+    .support { padding: 34px 22px; border-radius: 18px; }
+    .plan .price { font-size: 40px; }
+    .badge { top: 14px; right: 14px; }
+    footer { margin-top: 80px; }
+  }
   @media (prefers-reduced-motion: reduce) {
     html { scroll-behavior: auto; }
     .grain, .ticker .track, .wave i, .toast .eq i, .float, .promptbar .dot, .bar2 .mic { animation: none !important; }
@@ -252,7 +294,7 @@
       <li><a href="#shortcut">Shortcut</a></li>
       <li><a href="#pricing">Pricing</a></li>
       <li><a href="https://github.com/spencer1975/quick-voice-note">GitHub</a></li>
-      <li class="cta"><a href="obsidian://show-plugin?id=quick-voice-note">Install in Obsidian</a></li>
+      <li class="cta"><a href="obsidian://show-plugin?id=quick-voice-note"><span class="long">Install in Obsidian</span><span class="short">Install</span></a></li>
     </ul>
   </div>
 </nav>
@@ -262,7 +304,7 @@
   <div class="hero-fade" aria-hidden="true"></div>
   <div class="wrap">
     <div class="hero-copy">
-      <p class="promptbar"><span class="dot"></span> REC · voice field notes for Obsidian</p>
+      <p class="promptbar"><span class="dot"></span> REC · voice memos for Obsidian</p>
       <h1 id="headline">Press a button. Talk as long as you like. <span class="v">Read it in tonight's note.</span></h1>
       <p class="lede">One tap starts a recording. Stopping saves the audio to your vault and writes a timestamped, transcribed entry into your daily note. <strong>Nothing cuts you off when you pause.</strong> No typing on the move.</p>
       <div class="cta-row">
@@ -413,7 +455,7 @@
         <h2 class="reveal" data-delay="1">Record from your pocket</h2>
         <p class="sub reveal" data-delay="2">Point a one tap shortcut at <code>obsidian://voice-note</code> and Obsidian opens with recording already running. One tap stops and saves. Assign it to the iPhone Action Button, Control Centre, a home screen icon, or an NFC tag on the dashboard.</p>
         <div class="cta-row reveal" data-delay="3" style="opacity:1;animation:none;margin-top:28px">
-          <a class="btn btn-accent" href="field-record.shortcut">Download the Field Record shortcut</a>
+          <a class="btn btn-accent" href="quick-voice-note.shortcut">Download the shortcut</a>
         </div>
         <pre class="reveal" data-delay="3"><span class="c"># the URL behind the shortcut</span>
 obsidian://voice-note?action=record
@@ -425,7 +467,7 @@ obsidian://voice-note?autostart=0</pre>
         <div class="ab" aria-hidden="true"></div>
         <b>Action Button → recording</b>
         <p>Signed, so it installs in one tap. No fiddling in the Shortcuts app.</p>
-        <div class="chain"><span>press</span> → <span><em>Field Record</em></span> → <span>Obsidian opens</span> → <span>● recording</span> → <span>stop</span> → <span>in tonight's note</span></div>
+        <div class="chain"><span>press</span> → <span><em>Quick Voice Note</em></span> → <span>Obsidian opens</span> → <span>● recording</span> → <span>stop</span> → <span>in tonight's note</span></div>
       </div>
     </div>
   </div>
