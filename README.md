@@ -64,8 +64,8 @@ filed into your daily notes.
 
 ## Install
 
-Settings → Community plugins → Browse → search **Quick Voice Note** (once the
-directory listing is live). Manual install: copy `main.js`, `manifest.json`,
+Settings → Community plugins → Browse → search **Quick Voice Note**, or
+[install directly from Obsidian](obsidian://show-plugin?id=quick-voice-note). Manual install: copy `main.js`, `manifest.json`,
 and `styles.css` from the [latest release](https://github.com/spencer1975/quick-voice-note/releases/latest)
 into `<your vault>/.obsidian/plugins/quick-voice-note/`, then enable the plugin.
 
