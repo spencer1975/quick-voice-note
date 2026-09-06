@@ -1,7 +1,73 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>Quick Voice Note Cloud: start your free trial</title>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quick Voice Note Cloud: launching soon</title>
+<meta name="description" content="The Cloud key for Quick Voice Note is launching soon. Leave your email and be first to know.">
 <meta name="robots" content="noindex">
-<meta http-equiv="refresh" content="0; url=https://quickvoicenote.lemonsqueezy.com/checkout/buy/62a37f18-bcd9-481f-bfb1-c002c1073df5">
-<script>location.replace('https://quickvoicenote.lemonsqueezy.com/checkout/buy/62a37f18-bcd9-481f-bfb1-c002c1073df5');</script>
-<style>body{font-family:system-ui;background:#0e0c14;color:#f2eff8;display:grid;place-items:center;height:100vh;margin:0}</style>
-</head><body><p>Taking you to checkout… <a href="https://quickvoicenote.lemonsqueezy.com/checkout/buy/62a37f18-bcd9-481f-bfb1-c002c1073df5" style="color:#a78bfa">Continue</a></p></body></html>
+<link rel="icon" href="../img/icon-64.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700&family=Nunito:wght@400;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  :root { --ground:#0e0c14; --text:#f2eff8; --muted:#9b95ab; --accent:#a78bfa; --accent-2:#c4b5fd; --accent-ink:#160b2e; --violet:#7c3aed; --rec:#ff3b3b; --line:rgba(255,255,255,.08); --line-strong:rgba(255,255,255,.16);
+    --display:"Outfit","Nunito",system-ui,sans-serif; --body:"Nunito",system-ui,sans-serif; --mono:"JetBrains Mono",ui-monospace,monospace; }
+  * { box-sizing:border-box }
+  body { margin:0; min-height:100vh; background:var(--ground); color:var(--text); font-family:var(--body); font-size:17px; line-height:1.6; display:grid; place-items:center; padding:32px 20px; overflow-x:hidden }
+  body::before { content:""; position:fixed; inset:-20%; background:radial-gradient(60% 50% at 50% 20%, rgba(124,58,237,.35), transparent 70%); pointer-events:none }
+  .card { position:relative; width:100%; max-width:560px; background:rgba(255,255,255,.03); border:1px solid var(--line-strong); border-radius:24px; padding:44px 40px; box-shadow:0 40px 80px -40px rgba(0,0,0,.8) }
+  .icon { width:72px; height:72px; border-radius:20px; margin-bottom:22px; display:block }
+  .kicker { font-family:var(--mono); font-size:12px; letter-spacing:.16em; text-transform:uppercase; color:var(--accent); margin:0 0 12px; display:flex; align-items:center; gap:10px }
+  .kicker::before { content:""; width:8px; height:8px; border-radius:50%; background:var(--rec); box-shadow:0 0 0 4px rgba(255,59,59,.18) }
+  h1 { font-family:var(--display); font-weight:700; letter-spacing:-0.03em; font-size:clamp(30px,5vw,40px); line-height:1.08; margin:0 0 14px }
+  h1 span { color:var(--accent) }
+  p { color:var(--muted); margin:0 0 10px }
+  .price { font-family:var(--mono); font-size:13px; color:var(--accent-2); margin:18px 0 26px }
+  form { display:flex; gap:10px; flex-wrap:wrap }
+  input { flex:1 1 220px; font:inherit; font-size:16px; color:var(--text); background:rgba(255,255,255,.04); border:1px solid var(--line-strong); border-radius:999px; padding:13px 18px; outline:none }
+  input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(167,139,250,.25) }
+  button { font:inherit; font-weight:700; font-size:16px; color:var(--accent-ink); background:var(--accent); border:0; border-radius:999px; padding:13px 22px; cursor:pointer; transition:background .2s, box-shadow .2s }
+  button:hover { background:var(--accent-2); box-shadow:0 10px 40px -10px rgba(167,139,250,.7) }
+  button:disabled { opacity:.6; cursor:default }
+  .note { font-size:13.5px; margin-top:16px }
+  .note a { color:var(--accent) }
+  .done { display:none; padding:16px 18px; border-radius:14px; background:rgba(167,139,250,.12); border:1px solid rgba(167,139,250,.35); color:var(--text) }
+  .err { display:none; color:#ff8c8c; font-size:14px; margin-top:10px }
+  .free { margin-top:28px; padding-top:22px; border-top:1px solid var(--line); font-size:15px }
+  .free a { color:var(--text); font-weight:700; text-decoration:none; border-bottom:1px solid var(--line-strong) }
+</style>
+</head>
+<body>
+<main class="card">
+  <img class="icon" src="../img/icon-256.png" alt="">
+  <p class="kicker">Cloud key · launching soon</p>
+  <h1>One key. <span>Transcription just works.</span></h1>
+  <p>The Cloud key is the no setup path for Quick Voice Note: paste one license key and every recording lands in your notes as readable text. No API accounts, no billing dashboards.</p>
+  <p class="price">A$9 a month · 3 days free · cancel anytime</p>
+  <form id="f" novalidate>
+    <input id="email" type="email" name="email" placeholder="you@example.com" autocomplete="email" required>
+    <button id="go" type="submit">Notify me</button>
+  </form>
+  <div class="err" id="err"></div>
+  <div class="done" id="done">You're on the list. We'll email you once when the Cloud key opens, and nothing else.</div>
+  <p class="note">One email at launch. No newsletter, no sharing your address.</p>
+  <p class="free">Don't want to wait? The plugin is free today with your own OpenAI, Groq or local Whisper key. <a href="https://quickvoicenote.com/#pricing">See how</a></p>
+</main>
+<script>
+  const f=document.getElementById('f'), email=document.getElementById('email'), go=document.getElementById('go'), err=document.getElementById('err'), done=document.getElementById('done');
+  f.addEventListener('submit', async (e) => {
+    e.preventDefault(); err.style.display='none';
+    const v=email.value.trim();
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v)){ err.textContent='Please enter a valid email address.'; err.style.display='block'; return; }
+    go.disabled=true; go.textContent='Saving…';
+    try {
+      const r=await fetch('https://api.quickvoicenote.com/v1/waitlist',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:v})});
+      const j=await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error((j.error&&j.error.message)||'Something went wrong. Please try again.');
+      f.style.display='none'; done.style.display='block';
+    } catch(ex){ err.textContent=ex.message; err.style.display='block'; go.disabled=false; go.textContent='Notify me'; }
+  });
+</script>
+</body>
+</html>

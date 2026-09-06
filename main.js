@@ -885,11 +885,10 @@ class QuickVoiceNoteSettingTab extends PluginSettingTab {
     let advanced = null; // the Advanced <details>, assigned below
     const plan = containerEl.createDiv({ cls: 'qvn-plan' });
     plan.createDiv({ cls: 'qvn-plan-title', text: 'Cloud key' });
-    plan.createDiv({ cls: 'qvn-plan-price', text: 'A$9 a month · 3 days free · cancel anytime' });
-    plan.createEl('p', { text: 'No API accounts, nothing to configure. Start a trial, paste the license key from your email below, and transcription just works. Cancel anytime from the link in your receipt email.' });
+    plan.createDiv({ cls: 'qvn-plan-price', text: 'Launching soon · A$9 a month · 3 days free' });
+    plan.createEl('p', { text: 'No API accounts, nothing to configure. Paste one license key and transcription just works. The Cloud key opens shortly: leave your email and you will get one message when it does.' });
     const actions = plan.createDiv({ cls: 'qvn-plan-actions' });
-    new obsidian.ButtonComponent(actions).setButtonText('Start free trial').setCta().onClick(() => window.open(TRIAL_URL));
-    actions.createEl('a', { text: 'Manage or cancel subscription', href: 'https://app.lemonsqueezy.com/my-orders' });
+    new obsidian.ButtonComponent(actions).setButtonText('Notify me at launch').setCta().onClick(() => window.open(TRIAL_URL));
     const byo = actions.createEl('a', { text: 'Or bring your own API key', href: '#' });
     byo.addEventListener('click', (e) => { e.preventDefault(); if (advanced) { advanced.open = true; advanced.scrollIntoView({ behavior: 'smooth' }); } });
     const statusEl = plan.createDiv({ cls: 'qvn-plan-status' });
