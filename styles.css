@@ -26,7 +26,7 @@
    next to the reading-mode toggle. Native Obsidian size, red so it reads
    as "record". */
 /* Extra ancestor keeps this above Obsidian's own .view-action colour rule
-   without resorting to !important. */
+   without needing a forced override. */
 .workspace .view-action.qvn-action,
 .workspace .view-action.qvn-action svg,
 .workspace .view-action.qvn-action:hover {
