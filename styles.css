@@ -25,9 +25,12 @@
 /* Record button (mobile) — a regular view action in the note header,
    next to the reading-mode toggle. Native Obsidian size, red so it reads
    as "record". */
-.view-action.qvn-action,
-.view-action.qvn-action svg {
-  color: var(--color-red) !important;
+/* Extra ancestor keeps this above Obsidian's own .view-action colour rule
+   without resorting to !important. */
+.workspace .view-action.qvn-action,
+.workspace .view-action.qvn-action svg,
+.workspace .view-action.qvn-action:hover {
+  color: var(--color-red);
 }
 .view-action.qvn-action:active { opacity: 0.6; }
 

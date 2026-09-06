@@ -55,8 +55,9 @@ Recordings become readable text via any OpenAI-compatible transcription API.
 Bring your own key (OpenAI, Groq, or a local Whisper server) under
 **Settings → Advanced → Transcription service**.
 
-Prefer zero setup? A license key (coming soon) enables managed transcription
-with no accounts, no API keys, and no configuration — one key and it works.
+Prefer zero setup? Managed transcription with a single license key is in
+development: no accounts, no API keys, no configuration. Details will be at
+[quickvoicenote.com](https://quickvoicenote.com) when it opens.
 
 Transcription is optional: without it you still get one-tap audio capture
 filed into your daily notes.
