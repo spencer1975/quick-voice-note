@@ -442,7 +442,7 @@ class RecordModal extends Modal {
       const ms = this.recorder.elapsedMs;
       this.timerEl.setText(formatDuration(ms));
       if (limitMs && ms >= limitMs && this.state === 'recording') {
-        new Notice('Reached the ' + this.plugin.settings.maxRecordingMinutes + '-minute limit — saving.');
+        new Notice('Reached the ' + this.plugin.settings.maxRecordingMinutes + ' minute limit reached, saving.');
         this.stopRecording();
       } else if (limitMs && limitMs - ms <= 60 * 1000 && limitMs - ms > 59 * 1000) {
         this.statusEl.setText('One minute left');
@@ -876,7 +876,7 @@ class QuickVoiceNoteSettingTab extends PluginSettingTab {
 
     /* Essentials */
     const info = containerEl.createDiv({ cls: 'qvn-info' });
-    info.createEl('p', { text: 'Tap the mic (ribbon, or the red mic in the note header on mobile), speak as long as you like, tap stop. The audio is saved to your vault and — with transcription on — added to your note as readable text. Defaults cover the rest; tweak them under Advanced if you ever need to.' });
+    info.createEl('p', { text: 'Tap the mic (ribbon, or the red mic in the note header on mobile), speak as long as you like, tap stop. The audio is saved to your vault and, with transcription on, added to your note as readable text. Defaults cover the rest; tweak them under Advanced if you ever need to.' });
 
     toggle(containerEl, 'Transcribe recordings', 'Long recordings become readable text in the note.', 'transcribe');
 
@@ -885,7 +885,7 @@ class QuickVoiceNoteSettingTab extends PluginSettingTab {
     let advanced = null; // the Advanced <details>, assigned below
     const plan = containerEl.createDiv({ cls: 'qvn-plan' });
     plan.createDiv({ cls: 'qvn-plan-title', text: 'Cloud key' });
-    plan.createDiv({ cls: 'qvn-plan-price', text: 'A$9 / month · 3-day free trial · cancel anytime' });
+    plan.createDiv({ cls: 'qvn-plan-price', text: 'A$9 a month · 3 days free · cancel anytime' });
     plan.createEl('p', { text: 'No API accounts, nothing to configure. Start a trial, paste the license key from your email below, and transcription just works. Cancel anytime from the link in your receipt email.' });
     const actions = plan.createDiv({ cls: 'qvn-plan-actions' });
     new obsidian.ButtonComponent(actions).setButtonText('Start free trial').setCta().onClick(() => window.open(TRIAL_URL));
@@ -895,9 +895,9 @@ class QuickVoiceNoteSettingTab extends PluginSettingTab {
     const statusEl = plan.createDiv({ cls: 'qvn-plan-status' });
     const refreshStatus = () => {
       statusEl.className = 'qvn-plan-status';
-      if (s.licenseKey && s.licenseKey.trim()) { statusEl.addClass('is-ok'); statusEl.setText('Cloud key set — recordings are transcribed through Quick Voice Note Cloud.'); }
+      if (s.licenseKey && s.licenseKey.trim()) { statusEl.addClass('is-ok'); statusEl.setText('Cloud key set. Recordings are transcribed through Quick Voice Note Cloud.'); }
       else if (s.transcriptionApiKey && s.transcriptionApiKey.trim()) { statusEl.addClass('is-ok'); statusEl.setText('Using your own API key (see Advanced → Transcription service).'); }
-      else { statusEl.addClass('is-warn'); statusEl.setText('No key yet — recordings are saved but not transcribed. Start a trial or add your own key.'); }
+      else { statusEl.addClass('is-warn'); statusEl.setText('No key yet. Recordings are saved but not transcribed. Start a trial or add your own key.'); }
     };
     this.refreshStatus = refreshStatus;
     refreshStatus();
@@ -967,7 +967,7 @@ class QuickVoiceNoteSettingTab extends PluginSettingTab {
     /* Phone shortcuts */
     new Setting(containerEl).setName('Phone shortcut').setHeading();
     const info2 = containerEl.createDiv({ cls: 'qvn-info' });
-    info2.createEl('p', { text: 'Point a one-tap shortcut (Action Button, Control Center, home screen, NFC tag) at this URL: Obsidian opens, recording starts immediately, one tap stops and saves.' });
+    info2.createEl('p', { text: 'Point a one tap shortcut (Action Button, Control Center, home screen, NFC tag) at this URL: Obsidian opens, recording starts immediately, one tap stops and saves.' });
     const urls = launcherUrls();
     new Setting(containerEl).setName('Record URL').setDesc(urls.record)
       .addButton((b) => b.setButtonText('Copy').onClick(async () => { await navigator.clipboard.writeText(urls.record); new Notice('Copied'); }));
@@ -980,7 +980,7 @@ class QuickVoiceNoteSettingTab extends PluginSettingTab {
     new Setting(det).setName('Behavior').setHeading();
     toggle(det, 'Open the note after saving', '', 'openNoteAfterSave');
     toggle(det, 'Ask for a caption before saving a recording', '', 'askForCaption');
-    toggle(det, 'Auto-start recording when launched from a URL', 'Override per URL with autostart=1 or 0.', 'autoStartFromUri');
+    toggle(det, 'Start recording automatically when launched from a URL', 'Override per URL with autostart=1 or 0.', 'autoStartFromUri');
     new Setting(det).setName('Maximum recording length (minutes)').setDesc('Recording stops and saves itself at this length, so a forgotten phone can\'t run for hours. 0 = no limit.')
       .addText((t) => { t.inputEl.type = 'number'; t.inputEl.min = '0'; t.setValue(String(s.maxRecordingMinutes)).onChange(async (v) => {
         const n = Math.max(0, Math.floor(Number(v) || 0)); s.maxRecordingMinutes = n; await p.saveSettings();
@@ -1004,14 +1004,14 @@ class QuickVoiceNoteSettingTab extends PluginSettingTab {
 
     new Setting(det).setName('Transcription service (bring your own)').setHeading();
     const info3 = det.createDiv({ cls: 'qvn-info' });
-    info3.createEl('p', { text: 'Used only when no license key is set above. Point at any OpenAI-compatible /audio/transcriptions endpoint (OpenAI, Groq, a local Whisper server) with your own API key.' });
+    info3.createEl('p', { text: 'Used only when no license key is set above. Point at any /audio/transcriptions endpoint that speaks the OpenAI format (OpenAI, Groq, a local Whisper server) with your own API key.' });
     new Setting(det).setName('API key').setDesc('Stored in this vault\'s plugin data.')
       .addText((t) => { t.inputEl.type = 'password'; t.setValue(s.transcriptionApiKey).onChange(async (v) => { s.transcriptionApiKey = v.trim(); await p.saveSettings(); if (this.refreshStatus) this.refreshStatus(); }); });
     text(det, 'Endpoint', '', 'transcriptionEndpoint', DEFAULTS.transcriptionEndpoint);
     text(det, 'Model', '', 'transcriptionModel', 'whisper-large-v3-turbo');
-    text(det, 'Language', 'ISO code, e.g. en. Blank auto-detects.', 'transcriptionLanguage', '');
+    text(det, 'Language', 'ISO code, e.g. en. Leave blank to detect automatically.', 'transcriptionLanguage', '');
     text(det, 'Vocabulary hint', 'Optional prompt for names and jargon.', 'transcriptionPrompt', '');
-    text(det, 'Cloud endpoint', 'Where the license key sends audio. Only change if self-hosting the proxy.', 'cloudEndpoint', DEFAULTS.cloudEndpoint);
+    text(det, 'Cloud endpoint', 'Where the license key sends audio. Only change if you host the proxy yourself.', 'cloudEndpoint', DEFAULTS.cloudEndpoint);
   }
 }
 
