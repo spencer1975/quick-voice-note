@@ -91,7 +91,7 @@ const DEFAULTS = {
   // /audio/transcriptions endpoint + API key.
   transcribe: false,
   licenseKey: '',
-  cloudEndpoint: 'https://quick-voice-cloud.workers.dev/v1/audio/transcriptions',
+  cloudEndpoint: 'https://api.quickvoicenote.com/v1/audio/transcriptions',
   transcriptionEndpoint: 'https://api.openai.com/v1/audio/transcriptions',
   transcriptionApiKey: '',
   transcriptionModel: 'whisper-1',
@@ -534,6 +534,8 @@ class QuickVoiceNotePlugin extends Plugin {
     // Installs from before the style picker: work out which preset (if
     // any) their hand-written template matches.
     if (!saved.entryStyle) this.settings.entryStyle = styleForTemplate(this.settings.appendTemplate);
+    // Pre-launch builds saved a placeholder cloud endpoint; move them to the real one.
+    if (/quick-voice-cloud\.workers\.dev/.test(this.settings.cloudEndpoint || '')) this.settings.cloudEndpoint = DEFAULTS.cloudEndpoint;
     this.activeModal = null;
     this.applyCalloutStyle();
     this.register(() => {
@@ -876,7 +878,11 @@ class QuickVoiceNoteSettingTab extends PluginSettingTab {
     info.createEl('p', { text: 'Tap the mic (ribbon, or the red mic in the note header on mobile), speak as long as you like, tap stop. The audio is saved to your vault and — with transcription on — added to your note as readable text. Defaults cover the rest; tweak them under Advanced if you ever need to.' });
 
     toggle(containerEl, 'Transcribe recordings', 'Long recordings become readable text in the note.', 'transcribe');
-    new Setting(containerEl).setName('License key').setDesc('The easy path: one key, nothing else to set up. Leave blank if you bring your own API key under Advanced → Transcription service.')
+    const licDesc = document.createDocumentFragment();
+    licDesc.append('The easy path: one key, nothing else to set up. ');
+    licDesc.createEl('a', { text: 'Get a key', href: 'https://quickvoicenote.com/#pricing' });
+    licDesc.append(' or leave blank and bring your own API key under Advanced → Transcription service.');
+    new Setting(containerEl).setName('License key').setDesc(licDesc)
       .addText((t) => { t.inputEl.type = 'password'; t.setValue(s.licenseKey).onChange(async (v) => { s.licenseKey = v.trim(); await p.saveSettings(); }); });
 
     /* Where and how it lands */
