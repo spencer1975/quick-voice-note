@@ -886,9 +886,10 @@ class QuickVoiceNoteSettingTab extends PluginSettingTab {
     const plan = containerEl.createDiv({ cls: 'qvn-plan' });
     plan.createDiv({ cls: 'qvn-plan-title', text: 'Cloud key' });
     plan.createDiv({ cls: 'qvn-plan-price', text: 'A$9 / month · 3-day free trial · cancel anytime' });
-    plan.createEl('p', { text: 'No API accounts, nothing to configure. Start a trial, paste the license key from your email below, and transcription just works.' });
+    plan.createEl('p', { text: 'No API accounts, nothing to configure. Start a trial, paste the license key from your email below, and transcription just works. Cancel anytime from the link in your receipt email.' });
     const actions = plan.createDiv({ cls: 'qvn-plan-actions' });
     new obsidian.ButtonComponent(actions).setButtonText('Start free trial').setCta().onClick(() => window.open(TRIAL_URL));
+    actions.createEl('a', { text: 'Manage or cancel subscription', href: 'https://app.lemonsqueezy.com/my-orders' });
     const byo = actions.createEl('a', { text: 'Or bring your own API key', href: '#' });
     byo.addEventListener('click', (e) => { e.preventDefault(); if (advanced) { advanced.open = true; advanced.scrollIntoView({ behavior: 'smooth' }); } });
     const statusEl = plan.createDiv({ cls: 'qvn-plan-status' });
