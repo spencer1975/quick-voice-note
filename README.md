@@ -12,11 +12,12 @@ daily note:
 
 ```markdown
 - 14:32 ![[Recordings/Voice 2026-09-05 14-32-10.m4a]]
-    - the intro is too long, cut the first two paragraphs and open on the question
+    - lecture recap: three causes of the crisis, the second one is the essay question
 ```
 
-Built for people who capture thoughts away from a desk — on a walk, in the
-car, between meetings — anyone whose best ideas arrive mid-stride. Unlike system dictation, it doesn't cut off when you pause, keeps
+Built for people who think out loud — students recapping a lecture on the
+walk home, founders with a business idea in the car, anyone whose best
+thoughts arrive away from a desk. Unlike system dictation, it doesn't cut off when you pause, keeps
 the original audio as backup, and files everything exactly where you'll look
 for it tonight.
 
