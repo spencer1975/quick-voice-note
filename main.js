@@ -69,6 +69,10 @@ const DEFAULTS = {
   // Voice callout look: tint colour and how strong the background wash is.
   calloutColor: '#ef4444',
   calloutWash: 0.12, // 0–1
+  // Safety net: recordings stop and save themselves at this length so a
+  // forgotten phone in a pocket can't run for hours (and can't rack up
+  // transcription cost). 0 disables.
+  maxRecordingMinutes: 30,
   // Flow
   openNoteAfterSave: false,
   askForCaption: false,
@@ -432,7 +436,17 @@ class RecordModal extends Modal {
     setIcon(this.bigBtn, 'square');
     this.statusEl.removeClass('qvn-error');
     this.statusEl.setText('Recording…');
-    this.timer = window.setInterval(() => this.timerEl.setText(formatDuration(this.recorder.elapsedMs)), 250);
+    const limitMs = Math.max(0, Number(this.plugin.settings.maxRecordingMinutes) || 0) * 60 * 1000;
+    this.timer = window.setInterval(() => {
+      const ms = this.recorder.elapsedMs;
+      this.timerEl.setText(formatDuration(ms));
+      if (limitMs && ms >= limitMs && this.state === 'recording') {
+        new Notice('Reached the ' + this.plugin.settings.maxRecordingMinutes + '-minute limit — saving.');
+        this.stopRecording();
+      } else if (limitMs && limitMs - ms <= 60 * 1000 && limitMs - ms > 59 * 1000) {
+        this.statusEl.setText('One minute left');
+      }
+    }, 250);
     const tick = () => {
       if (this.state !== 'recording') return;
       this.meterFill.style.width = Math.round(this.recorder.level() * 100) + '%';
@@ -941,6 +955,10 @@ class QuickVoiceNoteSettingTab extends PluginSettingTab {
     toggle(det, 'Open the note after saving', '', 'openNoteAfterSave');
     toggle(det, 'Ask for a caption before saving a recording', '', 'askForCaption');
     toggle(det, 'Auto-start recording when launched from a URL', 'Override per URL with autostart=1 or 0.', 'autoStartFromUri');
+    new Setting(det).setName('Maximum recording length (minutes)').setDesc('Recording stops and saves itself at this length, so a forgotten phone can\'t run for hours. 0 = no limit.')
+      .addText((t) => { t.inputEl.type = 'number'; t.inputEl.min = '0'; t.setValue(String(s.maxRecordingMinutes)).onChange(async (v) => {
+        const n = Math.max(0, Math.floor(Number(v) || 0)); s.maxRecordingMinutes = n; await p.saveSettings();
+      }); });
     toggle(det, 'Record button in note header on mobile', 'Takes effect after the plugin reloads.', 'showMobileButton');
 
     new Setting(det).setName('Files and formatting').setHeading();
