@@ -23,15 +23,28 @@ for it tonight.
 
 ## How it works
 
-- **Mobile:** a floating mic button sits on every note — tap it and you're
-  already recording. It slips away while you scroll and comes right back.
+- **Mobile:** a red mic sits in the note header next to the reading-mode
+  toggle — tap it and you're already recording.
 - **Desktop:** mic button in the ribbon, or the "Record voice note" command.
 - **One-tap from your pocket:** point an iOS Shortcut, Android shortcut, or an
   NFC tag at `obsidian://voice-note` — Obsidian opens with recording already
   running. One tap stops and saves.
 - Stopping saves the audio into your vault (`Recordings/` by default),
-  transcribes it, and appends the entry to today's daily note — respecting
-  your Daily Notes folder, format, and template.
+  transcribes it, and adds the entry to today's daily note — respecting
+  your Daily Notes folder, format, and template — or to the note you're in.
+
+## Where it lands, and how it looks
+
+Under **Settings → In the note**:
+
+- **Save to:** today's daily note, the note you're in (at the cursor or at
+  the end), or ask after each recording.
+- **Audio in the note:** embedded player, a link to the file, or transcript
+  only. The recording is always kept in the recordings folder.
+- **Memo style:** list item, voice callout (a tinted card with a mic icon —
+  pick the colour and wash strength), quote block, heading per memo, plain
+  paragraph, or a single line. A live preview shows each one, and the
+  template under Advanced is yours to edit for anything else.
 
 ## Transcription
 

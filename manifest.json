@@ -1,9 +1,9 @@
 {
   "id": "quick-voice-note",
   "name": "Quick Voice Note",
-  "version": "0.5.7",
+  "version": "0.6.0",
   "minAppVersion": "1.5.0",
-  "description": "One-tap voice recording into today's daily note — audio saved to the vault, transcribed to readable text. Tap the mic (ribbon, floating mobile button, or a phone shortcut via obsidian://voice-note), speak, tap stop.",
+  "description": "One-tap voice recording into your notes — audio saved to the vault, transcribed to readable text. Tap the mic (ribbon, the mic in the note header on mobile, or a phone shortcut via obsidian://voice-note), speak, tap stop. Save to the daily note or the note you are in, pick a memo style.",
   "author": "Spencer Clark",
   "isDesktopOnly": false,
   "authorUrl": "https://www.spencerleeclark.com/",

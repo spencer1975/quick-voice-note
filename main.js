@@ -8,12 +8,67 @@ const {
 
 const PROTOCOL_ACTION = 'voice-note';
 
+// Ready-made looks for a voice memo entry. "custom" means the user edited
+// the template by hand; whatever is in appendTemplate is used as-is.
+const ENTRY_STYLES = {
+  list: {
+    label: 'List item (time, player, transcript nested)',
+    template: '- {{time}} {{embed}} {{caption}}\n    - {{transcript}}',
+  },
+  callout: {
+    label: 'Voice callout (red mic card)',
+    template: '> [!voice] {{time}} {{caption}}\n> {{embed}}\n> {{transcript}}',
+  },
+  quote: {
+    label: 'Quote block',
+    template: '> **{{time}}** {{caption}}\n> {{embed}}\n>\n> {{transcript}}',
+  },
+  heading: {
+    label: 'Heading per memo',
+    template: '### {{time}} {{caption}}\n{{embed}}\n\n{{transcript}}',
+  },
+  paragraph: {
+    label: 'Plain paragraph',
+    template: '**{{time}}** {{caption}}\n{{embed}}\n{{transcript}}',
+  },
+  minimal: {
+    label: 'One line (time and transcript only)',
+    template: '- {{time}} {{transcript}} {{link}}',
+  },
+};
+
+// '#rgb' / '#rrggbb' → 'r, g, b' for use inside rgba(). Bad input → red.
+function hexToRgbTriplet(hex) {
+  let h = String(hex || '').trim().replace(/^#/, '');
+  if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+  if (!/^[0-9a-fA-F]{6}$/.test(h)) return '239, 68, 68';
+  return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)).join(', ');
+}
+
+function styleForTemplate(tpl) {
+  for (const k of Object.keys(ENTRY_STYLES)) {
+    if (ENTRY_STYLES[k].template === tpl) return k;
+  }
+  return 'custom';
+}
+
 const DEFAULTS = {
-  // What gets appended to the daily note. Empty placeholders collapse.
+  // What gets appended to the note. Empty placeholders collapse.
   textTemplate: '- {{time}} {{text}}',
-  appendTemplate: '- {{time}} {{embed}} {{caption}}\n    - {{transcript}}',
+  appendTemplate: ENTRY_STYLES.list.template,
+  entryStyle: 'list',
   heading: '',
   timeFormat: 'HH:mm',
+  // Where the entry lands: today's daily note, the note you are in, or
+  // ask after each recording.
+  destination: 'daily', // daily | current | ask
+  currentNotePlacement: 'cursor', // cursor | end
+  // How the audio file shows up in the note. The file is always kept in
+  // the recordings folder.
+  audioInNote: 'embed', // embed | link | none
+  // Voice callout look: tint colour and how strong the background wash is.
+  calloutColor: '#ef4444',
+  calloutWash: 0.12, // 0–1
   // Flow
   openNoteAfterSave: false,
   askForCaption: false,
@@ -83,18 +138,37 @@ function joinPath(folder, name) {
 }
 
 // Replace {{name}} placeholders. Lines that end up as nothing but
-// whitespace or a bare list marker are dropped, so optional placeholders
-// (caption, transcript) collapse cleanly when empty.
+// whitespace, a bare list marker, a bare blockquote ">" or an empty heading
+// are dropped, so optional placeholders (caption, transcript, embed)
+// collapse cleanly when empty. A lone ">" that the template itself put
+// between two non-empty quote lines is kept as a paragraph break.
 function renderTemplate(tpl, vars) {
-  const out = [];
+  const rendered = [];
   for (const rawLine of String(tpl || '').split('\n')) {
     const line = rawLine.replace(/\{\{\s*([a-zA-Z_]+)\s*\}\}/g, (_, k) =>
       vars[k] == null ? '' : String(vars[k]));
-    const trimmed = line.replace(/\s+$/, '');
-    if (/^\s*(?:[-*+]|\d+[.)])?\s*$/.test(trimmed)) continue;
-    out.push(trimmed);
+    // Trim the end and squash the gap an empty placeholder leaves mid-line
+    // (leading indentation is left alone).
+    const trimmed = line.replace(/\s+$/, '').replace(/(\S) {2,}/g, '$1 ');
+    const hadPlaceholder = /\{\{/.test(rawLine);
+    const empty = /^\s*(?:>\s*)*(?:[-*+]|\d+[.)]|#{1,6})?\s*$/.test(trimmed);
+    // Drop lines whose placeholders all came back empty. Keep spacer lines
+    // the template wrote deliberately (no placeholder) for now; trimmed below.
+    if (empty && hadPlaceholder) continue;
+    rendered.push({ text: trimmed, empty });
   }
-  return out.join('\n');
+  // Remove spacer lines at the edges and collapse runs of spacers.
+  const out = [];
+  for (let i = 0; i < rendered.length; i++) {
+    const r = rendered[i];
+    if (r.empty) {
+      const prev = out.length ? out[out.length - 1] : null;
+      const next = rendered.slice(i + 1).find((x) => !x.empty);
+      if (!prev || !next || prev.empty) continue;
+    }
+    out.push(r);
+  }
+  return out.map((r) => r.text).join('\n');
 }
 
 function headingLevel(line) {
@@ -284,6 +358,9 @@ class RecordModal extends Modal {
     this.recorder = new Recorder();
     this.state = 'idle'; // idle | recording | review | saving
     this.result = null;
+    // Where "current note" points, captured before the modal takes focus.
+    this.target = plugin.captureTarget();
+    this.dest = null; // chosen at save time when destination is "ask"
     this.timer = null;
     this.raf = null;
   }
@@ -310,15 +387,26 @@ class RecordModal extends Modal {
       cls: 'qvn-caption', attr: { placeholder: 'Optional caption…', rows: '2' },
     });
     const row = this.reviewEl.createDiv({ cls: 'qvn-row' });
-    const saveBtn = row.createEl('button', { cls: 'mod-cta', text: "Save to today's note" });
-    saveBtn.addEventListener('click', () => this.save());
+    const p = this.plugin;
+    if (this.mustAsk()) {
+      // Two save buttons: the note you came from, or today's note.
+      const curBtn = row.createEl('button', { cls: 'mod-cta', text: 'Save to ' + this.target.file.basename });
+      curBtn.addEventListener('click', () => this.save('current'));
+      const dailyBtn = row.createEl('button', { text: "Save to today's note" });
+      dailyBtn.addEventListener('click', () => this.save('daily'));
+    } else {
+      const saveBtn = row.createEl('button', { cls: 'mod-cta', text: 'Save to ' + p.destinationLabel(null, this.target) });
+      saveBtn.addEventListener('click', () => this.save());
+    }
     const discardBtn = row.createEl('button', { text: 'Discard' });
     discardBtn.addEventListener('click', () => { this.result = null; this.close(); });
 
     this.hintEl = contentEl.createDiv({ cls: 'qvn-hint' });
-    this.hintEl.setText(this.plugin.settings.askForCaption
-      ? 'Stop, add a caption, save.'
-      : 'Stop saves straight to today\'s daily note.');
+    this.hintEl.setText(this.mustAsk()
+      ? 'Stop, then pick where it goes.'
+      : p.settings.askForCaption
+        ? 'Stop, add a caption, save.'
+        : 'Stop saves straight to ' + p.destinationLabel(null, this.target) + '.');
 
     if (this.opts.autoStart) this.startRecording();
   }
@@ -370,24 +458,32 @@ class RecordModal extends Modal {
       setIcon(this.bigBtn, 'mic');
       return;
     }
-    if (this.plugin.settings.askForCaption) {
+    if (this.plugin.settings.askForCaption || this.mustAsk()) {
       this.statusEl.setText('Recorded ' + formatDuration(this.result.duration));
       this.bigBtn.hide();
       this.reviewEl.show();
-      this.captionEl.focus();
+      if (this.plugin.settings.askForCaption) this.captionEl.focus();
+      else this.captionEl.hide();
     } else {
       await this.save();
     }
   }
 
-  async save() {
+  // "Ask" only makes sense when there is a current note to offer.
+  mustAsk() {
+    return this.plugin.settings.destination === 'ask' && !!(this.target && this.target.file);
+  }
+
+  async save(dest) {
     if (!this.result || this.state === 'saving') return;
     this.state = 'saving';
+    this.dest = dest || null;
     this.reviewEl.hide();
     this.bigBtn.hide();
     this.statusEl.setText('Saving…');
     try {
-      await this.plugin.saveRecording(this.result, this.captionEl.value.trim(), (msg) => this.statusEl.setText(msg));
+      await this.plugin.saveRecording(this.result, this.captionEl.value.trim(),
+        (msg) => this.statusEl.setText(msg), this.dest, this.target);
       this.result = null;
       this.close();
     } catch (e) {
@@ -419,50 +515,38 @@ class RecordModal extends Modal {
 
 class QuickVoiceNotePlugin extends Plugin {
   async onload() {
-    this.settings = Object.assign({}, DEFAULTS, await this.loadData());
+    const saved = (await this.loadData()) || {};
+    this.settings = Object.assign({}, DEFAULTS, saved);
+    // Installs from before the style picker: work out which preset (if
+    // any) their hand-written template matches.
+    if (!saved.entryStyle) this.settings.entryStyle = styleForTemplate(this.settings.appendTemplate);
     this.activeModal = null;
+    this.applyCalloutStyle();
+    this.register(() => {
+      document.body.style.removeProperty('--qvn-callout-rgb');
+      document.body.style.removeProperty('--qvn-callout-wash');
+    });
 
     this.addRibbonIcon('mic', 'Record voice note', () => this.openRecorder({ autoStart: false }));
 
     // On mobile the ribbon lives in a drawer; give recording an obvious
-    // one-tap home: a floating mic button that starts recording immediately.
-    // It exists only while a note is front and center — it grows in from a
-    // dot when you land on a note, shrinks away when a drawer or another
-    // pane takes over, and slides down while the note scrolls.
+    // one-tap home: a mic button in the note's header actions, sitting
+    // next to the reading-mode toggle. Registered as a real view action so
+    // Obsidian lays it out (and never covers the "more options" menu).
     if (Platform.isMobile && this.settings.showMobileButton) {
-      // The button lives INSIDE the note view (not the app window), so
-      // drawers slide over it and it only exists where the note does.
-      const fab = createEl('button', { cls: 'qvn-fab qvn-fab-off', attr: { 'aria-label': 'Record voice note' } });
-      setIcon(fab, 'mic');
-      fab.addEventListener('click', () => this.openRecorder({ autoStart: true }));
-      let settle = null;
-      const onScroll = () => {
-        if (fab.hasClass('qvn-fab-off')) return;
-        fab.addClass('qvn-fab-hidden');
-        if (settle) window.clearTimeout(settle);
-        settle = window.setTimeout(() => fab.removeClass('qvn-fab-hidden'), 700);
-      };
       const attach = () => {
-        const view = this.app.workspace.getActiveViewOfType(obsidian.MarkdownView);
-        if (view) {
-          if (fab.parentElement !== view.containerEl) {
-            fab.addClass('qvn-fab-off');
-            view.containerEl.appendChild(fab);
-            // Next frame so the dot-grow transition plays after insertion.
-            window.requestAnimationFrame(() => fab.removeClass('qvn-fab-off'));
-          } else {
-            fab.removeClass('qvn-fab-off');
-          }
-        } else {
-          fab.addClass('qvn-fab-off');
-        }
+        this.app.workspace.getLeavesOfType('markdown').forEach((leaf) => {
+          const view = leaf.view;
+          if (!(view instanceof obsidian.MarkdownView)) return;
+          if (view.containerEl.querySelector('.qvn-action')) return;
+          const el = view.addAction('mic', 'Record voice note', () => this.openRecorder({ autoStart: true }));
+          el.addClass('qvn-action');
+        });
       };
       this.registerEvent(this.app.workspace.on('active-leaf-change', attach));
       this.registerEvent(this.app.workspace.on('layout-change', attach));
-      // Capture phase catches scrolls inside the editor's nested scroller.
-      this.registerDomEvent(document, 'scroll', onScroll, { capture: true, passive: true });
       this.app.workspace.onLayoutReady(attach);
-      this.register(() => { if (settle) window.clearTimeout(settle); fab.remove(); });
+      this.register(() => document.querySelectorAll('.qvn-action').forEach((el) => el.remove()));
     }
 
     this.addCommand({
@@ -521,6 +605,15 @@ class QuickVoiceNotePlugin extends Plugin {
   }
 
   async saveSettings() { await this.saveData(this.settings); }
+
+  // Push the chosen callout colour/wash into CSS variables on <body> so
+  // styles.css can use them and no theme rule can out-rank them.
+  applyCalloutStyle() {
+    const s = this.settings;
+    const wash = Math.min(1, Math.max(0, Number(s.calloutWash)));
+    document.body.style.setProperty('--qvn-callout-rgb', hexToRgbTriplet(s.calloutColor));
+    document.body.style.setProperty('--qvn-callout-wash', String(isNaN(wash) ? 0.12 : wash));
+  }
 
   openRecorder(opts) {
     if (this.activeModal) {
@@ -603,6 +696,55 @@ class QuickVoiceNotePlugin extends Plugin {
     return file;
   }
 
+  /* ---- Destination (daily note vs. the note you are in) ---- */
+
+  // Snapshot the note the user is looking at, plus the live editor and
+  // cursor if it's in edit mode. Taken before the recorder opens so the
+  // modal can't disturb it.
+  captureTarget() {
+    const view = this.app.workspace.getActiveViewOfType(obsidian.MarkdownView);
+    if (!view || !view.file) return null;
+    const editor = view.getMode && view.getMode() === 'source' ? view.editor : null;
+    return { file: view.file, editor, cursor: editor ? editor.getCursor() : null };
+  }
+
+  // 'current' only when there actually is a current note; otherwise the
+  // daily note is the safe landing spot.
+  resolveDestination(dest, target) {
+    const d = dest || this.settings.destination || 'daily';
+    if (d === 'daily') return 'daily';
+    return target && target.file ? 'current' : 'daily';
+  }
+
+  destinationLabel(dest, target) {
+    return this.resolveDestination(dest, target) === 'current'
+      ? (target.file.basename || 'current note')
+      : "today's note";
+  }
+
+  async insertEntry(text, dest, target) {
+    if (this.resolveDestination(dest, target) === 'daily') return this.appendToDailyNote(text);
+    const { file, editor, cursor } = target;
+    if (editor && cursor && this.settings.currentNotePlacement === 'cursor') {
+      // Drop the entry on its own line(s) right after the cursor's line.
+      const line = cursor.line;
+      const lineText = editor.getLine(line) || '';
+      const insert = (lineText.trim() ? '\n' : '') + text + '\n';
+      editor.replaceRange(insert, { line, ch: lineText.length });
+      const added = insert.split('\n').length - 1;
+      editor.setCursor({ line: line + added, ch: 0 });
+      return file;
+    }
+    const heading = this.settings.heading;
+    if (typeof this.app.vault.process === 'function') {
+      await this.app.vault.process(file, (data) => appendToNote(data, text, heading));
+    } else {
+      const data = await this.app.vault.read(file);
+      await this.app.vault.modify(file, appendToNote(data, text, heading));
+    }
+    return file;
+  }
+
   async appendText(text) {
     const now = this.now();
     const line = renderTemplate(this.settings.textTemplate, {
@@ -610,14 +752,15 @@ class QuickVoiceNotePlugin extends Plugin {
       date: now.format('YYYY-MM-DD'),
       text: text.trim(),
     });
-    const file = await this.appendToDailyNote(line);
+    // URL text can't ask, so "ask" behaves like "current note" here.
+    const file = await this.insertEntry(line, null, this.captureTarget());
     new Notice('Added to ' + file.basename);
     return file;
   }
 
   /* ---- Recording ---- */
 
-  async saveRecording(result, caption, progress) {
+  async saveRecording(result, caption, progress, dest, target) {
     const report = progress || (() => {});
     const s = this.settings;
     const now = this.now();
@@ -640,19 +783,25 @@ class QuickVoiceNotePlugin extends Plugin {
       }
     }
 
-    report('Appending to daily note…');
+    report('Adding to ' + this.destinationLabel(dest, target) + '…');
+    // The audio file is always kept; this only decides how the note refers
+    // to it. {{embed}} downgrades to a link, or to nothing, so the same
+    // template works for every choice.
+    const embed = '![[' + audioFile.path + ']]';
+    const link = '[[' + audioFile.path + ']]';
+    const audio = s.audioInNote || 'embed';
     const line = renderTemplate(s.appendTemplate, {
       time: now.format(s.timeFormat),
       date: now.format('YYYY-MM-DD'),
       file: audioFile.path,
       name: audioFile.name,
-      embed: '![[' + audioFile.path + ']]',
-      link: '[[' + audioFile.path + ']]',
+      embed: audio === 'embed' ? embed : audio === 'link' ? link : '',
+      link: audio === 'none' ? '' : link,
       caption: caption || '',
       transcript: transcript.replace(/\s+/g, ' ').trim(),
       duration: formatDuration(result.duration),
     });
-    const note = await this.appendToDailyNote(line);
+    const note = await this.insertEntry(line, dest, target);
     new Notice('Voice note saved to ' + note.basename);
     if (s.openNoteAfterSave) {
       await this.app.workspace.getLeaf(false).openFile(note);
@@ -703,16 +852,78 @@ class QuickVoiceNoteSettingTab extends PluginSettingTab {
       .addText((t) => t.setPlaceholder(placeholder || '').setValue(s[key]).onChange(async (v) => { s[key] = v; await p.saveSettings(); }));
     const toggle = (el, name, desc, key) => new Setting(el).setName(name).setDesc(desc)
       .addToggle((t) => t.setValue(!!s[key]).onChange(async (v) => { s[key] = v; await p.saveSettings(); }));
-    const area = (el, name, desc, key) => new Setting(el).setName(name).setDesc(desc).setClass('qvn-setting-area')
-      .addTextArea((t) => { t.setValue(s[key]).onChange(async (v) => { s[key] = v; await p.saveSettings(); }); t.inputEl.rows = 3; });
+    const area = (el, name, desc, key, onSet) => new Setting(el).setName(name).setDesc(desc).setClass('qvn-setting-area')
+      .addTextArea((t) => { t.setValue(s[key]).onChange(async (v) => { s[key] = v; if (onSet) onSet(v); await p.saveSettings(); }); t.inputEl.rows = 3; });
+    const dropdown = (el, name, desc, key, options, onSet) => new Setting(el).setName(name).setDesc(desc)
+      .addDropdown((d) => { d.addOptions(options).setValue(s[key]).onChange(async (v) => { s[key] = v; if (onSet) onSet(v); await p.saveSettings(); }); });
 
     /* Essentials */
     const info = containerEl.createDiv({ cls: 'qvn-info' });
-    info.createEl('p', { text: 'Tap the mic (ribbon, or the floating button on mobile), speak as long as you like, tap stop. The audio is saved to your vault and — with transcription on — appended to today\'s daily note as readable text. Defaults cover the rest; tweak them under Advanced if you ever need to.' });
+    info.createEl('p', { text: 'Tap the mic (ribbon, or the red mic in the note header on mobile), speak as long as you like, tap stop. The audio is saved to your vault and — with transcription on — added to your note as readable text. Defaults cover the rest; tweak them under Advanced if you ever need to.' });
 
-    toggle(containerEl, 'Transcribe recordings', 'Long recordings become readable text in the daily note.', 'transcribe');
+    toggle(containerEl, 'Transcribe recordings', 'Long recordings become readable text in the note.', 'transcribe');
     new Setting(containerEl).setName('License key').setDesc('The easy path: one key, nothing else to set up. Leave blank if you bring your own API key under Advanced → Transcription service.')
       .addText((t) => { t.inputEl.type = 'password'; t.setValue(s.licenseKey).onChange(async (v) => { s.licenseKey = v.trim(); await p.saveSettings(); }); });
+
+    /* Where and how it lands */
+    new Setting(containerEl).setName('In the note').setHeading();
+    dropdown(containerEl, 'Save to', 'Where each voice memo goes. "Ask" offers both after you stop. Falls back to the daily note when no note is open.', 'destination', {
+      daily: "Today's daily note",
+      current: 'The note I\'m in',
+      ask: 'Ask after each recording',
+    }, () => this.display());
+    if (s.destination !== 'daily') {
+      dropdown(containerEl, 'In the current note, put it', 'At the cursor needs the note in edit mode; otherwise it goes to the end (under the heading below, if set).', 'currentNotePlacement', {
+        cursor: 'At the cursor',
+        end: 'At the end of the note',
+      });
+    }
+    dropdown(containerEl, 'Audio in the note', 'The recording is always kept in the recordings folder. This is only how the note refers to it.', 'audioInNote', {
+      embed: 'Embedded player',
+      link: 'Link to the file',
+      none: 'Not mentioned (transcript only)',
+    });
+    const styleOptions = {};
+    for (const k of Object.keys(ENTRY_STYLES)) styleOptions[k] = ENTRY_STYLES[k].label;
+    styleOptions.custom = 'Custom (edit the template under Advanced)';
+    dropdown(containerEl, 'Memo style', 'How each entry is written. Pick one, or edit the recording template under Advanced for your own.', 'entryStyle', styleOptions, (v) => {
+      if (ENTRY_STYLES[v]) s.appendTemplate = ENTRY_STYLES[v].template;
+      this.display();
+    });
+    if (s.entryStyle === 'callout' || /\[!voice\]/i.test(s.appendTemplate)) {
+      const colorSetting = new Setting(containerEl).setName('Card colour').setDesc('Tint for the voice callout: icon, edge and background wash.');
+      if (typeof colorSetting.addColorPicker === 'function') {
+        colorSetting.addColorPicker((c) => c.setValue(s.calloutColor).onChange(async (v) => {
+          s.calloutColor = v; p.applyCalloutStyle(); await p.saveSettings();
+        }));
+      } else {
+        colorSetting.addText((t) => t.setPlaceholder('#ef4444').setValue(s.calloutColor).onChange(async (v) => {
+          s.calloutColor = v.trim(); p.applyCalloutStyle(); await p.saveSettings();
+        }));
+      }
+      new Setting(containerEl).setName('Wash strength').setDesc('How strongly the card background is tinted.')
+        .addSlider((sl) => sl.setLimits(0, 60, 2).setValue(Math.round(Number(s.calloutWash) * 100)).setDynamicTooltip()
+          .onChange(async (v) => { s.calloutWash = v / 100; p.applyCalloutStyle(); await p.saveSettings(); }));
+    }
+
+    // Live preview of the chosen style, rendered like it will be in a note.
+    const preview = containerEl.createDiv({ cls: 'qvn-preview' });
+    preview.createDiv({ cls: 'qvn-preview-label', text: 'Preview' });
+    const previewBody = preview.createDiv({ cls: 'qvn-preview-body markdown-rendered' });
+    const sample = renderTemplate(s.appendTemplate, {
+      time: '09:41', date: '2026-01-01', file: 'Recordings/Voice.m4a', name: 'Voice.m4a',
+      // A real embed needs a real file; stand in with a marker.
+      embed: s.audioInNote === 'embed' ? '`▶ 0:07 ────────`' : s.audioInNote === 'link' ? '[[Recordings/Voice.m4a]]' : '',
+      link: s.audioInNote === 'none' ? '' : '[[Recordings/Voice.m4a]]',
+      caption: 'Block 7', transcript: 'Nothing to pick in block seven, skip it this week.', duration: '0:07',
+    });
+    const MR = obsidian.MarkdownRenderer;
+    try {
+      const r = MR && (MR.render ? MR.render(this.app, sample, previewBody, '', p) : MR.renderMarkdown(sample, previewBody, '', p));
+      if (r && r.catch) r.catch(() => previewBody.setText(sample));
+    } catch (e) {
+      previewBody.setText(sample);
+    }
 
     /* Phone shortcuts */
     new Setting(containerEl).setName('Phone shortcut').setHeading();
@@ -727,10 +938,10 @@ class QuickVoiceNoteSettingTab extends PluginSettingTab {
     det.createEl('summary', { text: 'Advanced' });
 
     new Setting(det).setName('Behavior').setHeading();
-    toggle(det, "Open today's note after saving", '', 'openNoteAfterSave');
+    toggle(det, 'Open the note after saving', '', 'openNoteAfterSave');
     toggle(det, 'Ask for a caption before saving a recording', '', 'askForCaption');
     toggle(det, 'Auto-start recording when launched from a URL', 'Override per URL with autostart=1 or 0.', 'autoStartFromUri');
-    toggle(det, 'Floating record button on mobile', 'Takes effect after the plugin reloads.', 'showMobileButton');
+    toggle(det, 'Record button in note header on mobile', 'Takes effect after the plugin reloads.', 'showMobileButton');
 
     new Setting(det).setName('Files and formatting').setHeading();
     text(det, 'Recordings folder', '', 'recordingsFolder', 'Recordings');
@@ -738,7 +949,8 @@ class QuickVoiceNoteSettingTab extends PluginSettingTab {
     text(det, 'Append under heading', 'E.g. "## Voice notes". Blank appends at the end of the note.', 'heading', '');
     text(det, 'Time format', 'moment.js format for {{time}}.', 'timeFormat', 'HH:mm');
     area(det, 'Text template', 'For text sent via the obsidian://voice-note?text= URL. Placeholders: {{time}} {{date}} {{text}}.', 'textTemplate');
-    area(det, 'Recording template', 'Placeholders: {{time}} {{date}} {{embed}} {{link}} {{file}} {{name}} {{caption}} {{transcript}} {{duration}}. Empty lines collapse.', 'appendTemplate');
+    area(det, 'Recording template', 'Placeholders: {{time}} {{date}} {{embed}} {{link}} {{file}} {{name}} {{caption}} {{transcript}} {{duration}}. Empty lines collapse. Editing this switches Memo style to Custom.', 'appendTemplate',
+      (v) => { s.entryStyle = styleForTemplate(v); });
 
     new Setting(det).setName('Daily note location').setHeading();
     toggle(det, 'Use the Daily Notes plugin settings', 'Turn off to set folder, format and template here.', 'useDailyNotesSettings');
@@ -763,7 +975,7 @@ module.exports = QuickVoiceNotePlugin;
 
 // Exposed for the offline test harness in tools/; unused by Obsidian.
 module.exports.__test = {
-  DEFAULTS, PROTOCOL_ACTION, MIME_CANDIDATES,
+  DEFAULTS, PROTOCOL_ACTION, MIME_CANDIDATES, ENTRY_STYLES, styleForTemplate, hexToRgbTriplet,
   pickMimeType, extForMime, formatDuration, joinPath, renderTemplate,
   appendToNote, applyNoteTemplate, uniquePath, buildMultipart, launcherUrls,
   normalizeHeading, headingLevel,
