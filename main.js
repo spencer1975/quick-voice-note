@@ -2,6 +2,7 @@
 
 const obsidian = require('obsidian');
 const TRIAL_URL = 'https://quickvoicenote.com/trial';
+const MANAGE_URL = 'https://billing.stripe.com/p/login/dRm6oG8Yf1wfcdU1yo5sA00'; // Stripe customer portal: manage or cancel the Cloud subscription
 const {
   Plugin, PluginSettingTab, Setting, Modal, Notice, Platform,
   normalizePath, requestUrl, TFile, TFolder, setIcon,
@@ -885,23 +886,26 @@ class QuickVoiceNoteSettingTab extends PluginSettingTab {
     let advanced = null; // the Advanced <details>, assigned below
     const plan = containerEl.createDiv({ cls: 'qvn-plan' });
     plan.createDiv({ cls: 'qvn-plan-title', text: 'Cloud key' });
-    plan.createDiv({ cls: 'qvn-plan-price', text: 'Launching soon · A$9 a month · 3 days free' });
-    plan.createEl('p', { text: 'No API accounts, nothing to configure. Paste one license key and transcription just works. The Cloud key opens shortly: leave your email and you will get one message when it does.' });
+    plan.createDiv({ cls: 'qvn-plan-price', text: 'A$9 a month · 3 days free · cancel anytime' });
+    plan.createEl('p', { text: 'No API accounts, nothing to configure. Start a trial, copy the license key from the welcome page, paste it below, and transcription just works.' });
     const actions = plan.createDiv({ cls: 'qvn-plan-actions' });
-    new obsidian.ButtonComponent(actions).setButtonText('Notify me at launch').setCta().onClick(() => window.open(TRIAL_URL));
+    new obsidian.ButtonComponent(actions).setButtonText('Start 3 day free trial').setCta().onClick(() => window.open(TRIAL_URL));
     const byo = actions.createEl('a', { text: 'Or bring your own API key', href: '#' });
     byo.addEventListener('click', (e) => { e.preventDefault(); if (advanced) { advanced.open = true; advanced.scrollIntoView({ behavior: 'smooth' }); } });
     const statusEl = plan.createDiv({ cls: 'qvn-plan-status' });
     const refreshStatus = () => {
       statusEl.className = 'qvn-plan-status';
-      if (s.licenseKey && s.licenseKey.trim()) { statusEl.addClass('is-ok'); statusEl.setText('Cloud key set. Recordings are transcribed through Quick Voice Note Cloud.'); }
+      if (s.licenseKey && s.licenseKey.trim()) {
+        statusEl.addClass('is-ok'); statusEl.setText('Cloud key set. Recordings are transcribed through Quick Voice Note Cloud. ');
+        statusEl.createEl('a', { text: 'Manage or cancel subscription', href: MANAGE_URL });
+      }
       else if (s.transcriptionApiKey && s.transcriptionApiKey.trim()) { statusEl.addClass('is-ok'); statusEl.setText('Using your own API key (see Advanced → Transcription service).'); }
       else { statusEl.addClass('is-warn'); statusEl.setText('No key yet. Recordings are saved but not transcribed. Start a trial or add your own key.'); }
     };
     this.refreshStatus = refreshStatus;
     refreshStatus();
-    new Setting(containerEl).setName('License key').setDesc('From your Quick Voice Note Cloud welcome email. Leave blank if you use your own API key.')
-      .addText((t) => { t.inputEl.type = 'password'; t.setPlaceholder('XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX'); t.setValue(s.licenseKey).onChange(async (v) => { s.licenseKey = v.trim(); await p.saveSettings(); refreshStatus(); }); });
+    new Setting(containerEl).setName('License key').setDesc('From the welcome page after checkout (also linked in your Stripe receipt). Leave blank if you use your own API key.')
+      .addText((t) => { t.inputEl.type = 'password'; t.setPlaceholder('QVN-XXXX-XXXX-XXXX-XXXX'); t.setValue(s.licenseKey).onChange(async (v) => { s.licenseKey = v.trim(); await p.saveSettings(); refreshStatus(); }); });
 
     /* Where and how it lands */
     new Setting(containerEl).setName('In the note').setHeading();

@@ -3,7 +3,7 @@
 In build order. Each item earns something on its own.
 
 1. **Retranscribe untranscribed recordings** — command that scans the recordings folder and fills in missing transcripts. Foundation for imports.
-2. **Deploy the Worker and the license tier** — Lemon Squeezy product, real endpoint in the plugin, "one key, no setup" working end to end.
+2. **Deploy the Worker and the license tier** — Stripe Payment Link (Trippa account), Worker mints keys from the checkout session, "one key, no setup" working end to end.
 3. **Watch inbox** — a watch shortcut posts dictation to the Worker; the plugin pulls it into the daily note on open. First paid-tier-only feature.
 4. **Hosted signed-shortcut installer** — one-tap onboarding for the Field Record shortcut (generator already exists in quick-voice-cloud).
 5. **Import folder** — point the plugin at a folder (e.g. Just Press Record's iCloud output) so long watch/recorder-app audio flows in and gets transcribed.
