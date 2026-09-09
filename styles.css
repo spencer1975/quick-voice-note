@@ -33,6 +33,14 @@
   color: var(--color-red);
 }
 .view-action.qvn-action:active { opacity: 0.6; }
+/* Red ring around the mic so it reads as a record button among the grey
+   header icons. Drawn as an outline on the icon so it adds no size and
+   never shifts the button. */
+.workspace .view-action.qvn-action svg {
+  border-radius: 50%;
+  outline: 1.5px solid var(--color-red);
+  outline-offset: 3px;
+}
 
 /* Recorder */
 .qvn-timer {
