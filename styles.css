@@ -28,18 +28,19 @@
 /* Extra ancestor keeps this above Obsidian's own .view-action colour rule
    without needing a forced override. */
 .workspace .view-action.qvn-action,
-.workspace .view-action.qvn-action svg,
 .workspace .view-action.qvn-action:hover {
   color: var(--color-red);
 }
 .view-action.qvn-action:active { opacity: 0.6; }
-/* Red ring around the mic so it reads as a record button among the grey
-   header icons. Drawn as an outline on the icon so it adds no size and
-   never shifts the button. */
-.workspace .view-action.qvn-action svg {
+/* White mic on a red disc so it reads as a record button among the grey
+   header icons. The disc is a spread shadow behind the icon, so it adds no
+   size and never shifts the button. */
+.workspace .view-action.qvn-action svg,
+.workspace .view-action.qvn-action:hover svg {
+  color: #fff;
   border-radius: 50%;
-  outline: 1.5px solid var(--color-red);
-  outline-offset: 3px;
+  background: var(--color-red);
+  box-shadow: 0 0 0 4px var(--color-red);
 }
 
 /* Recorder */

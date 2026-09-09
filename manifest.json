@@ -1,7 +1,7 @@
 {
   "id": "quick-voice-note",
   "name": "Quick Voice Note",
-  "version": "0.7.2",
+  "version": "0.7.3",
   "minAppVersion": "1.5.0",
   "description": "Press a button, talk as long as you like, read it in tonight's note. Long voice memos saved to your vault and transcribed to text.",
   "author": "Spencer Clark",
