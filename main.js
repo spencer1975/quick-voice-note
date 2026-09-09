@@ -279,6 +279,8 @@ class Recorder {
     this.rec = null;
     this.chunks = [];
     this.startedAt = 0;
+    this.pausedAt = 0;     // wall clock when the current pause began, 0 if running
+    this.pausedTotal = 0;  // ms spent paused so far; excluded from elapsedMs
     this.mimeType = '';
     this.ctx = null;
     this.analyser = null;
@@ -300,6 +302,8 @@ class Recorder {
     this.rec.ondataavailable = (e) => { if (e.data && e.data.size > 0) this.chunks.push(e.data); };
     this.rec.start(1000);
     this.startedAt = Date.now();
+    this.pausedAt = 0;
+    this.pausedTotal = 0;
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (AC) {
@@ -313,7 +317,33 @@ class Recorder {
     } catch (e) { /* meter is cosmetic */ }
   }
 
-  get elapsedMs() { return this.startedAt ? Date.now() - this.startedAt : 0; }
+  // Recording time only: pauses don't count towards the clock or the limit.
+  get elapsedMs() {
+    if (!this.startedAt) return 0;
+    const end = this.pausedAt || Date.now();
+    return Math.max(0, end - this.startedAt - this.pausedTotal);
+  }
+
+  get paused() { return !!this.pausedAt; }
+
+  static get canPause() {
+    return typeof MediaRecorder !== 'undefined' && typeof MediaRecorder.prototype.pause === 'function';
+  }
+
+  pause() {
+    if (!this.rec || this.rec.state !== 'recording') return false;
+    try { this.rec.pause(); } catch (e) { return false; }
+    this.pausedAt = Date.now();
+    return true;
+  }
+
+  resume() {
+    if (!this.rec || this.rec.state !== 'paused') return false;
+    try { this.rec.resume(); } catch (e) { return false; }
+    if (this.pausedAt) this.pausedTotal += Date.now() - this.pausedAt;
+    this.pausedAt = 0;
+    return true;
+  }
 
   level() {
     if (!this.analyser) return 0;
@@ -342,7 +372,8 @@ class Recorder {
   cleanup() {
     try { if (this.stream) this.stream.getTracks().forEach((t) => t.stop()); } catch (e) { /* ignore */ }
     try { if (this.ctx) this.ctx.close(); } catch (e) { /* ignore */ }
-    this.stream = null; this.rec = null; this.ctx = null; this.analyser = null; this.startedAt = 0;
+    this.stream = null; this.rec = null; this.ctx = null; this.analyser = null;
+    this.startedAt = 0; this.pausedAt = 0; this.pausedTotal = 0;
   }
 
   discard() {
@@ -362,7 +393,7 @@ class RecordModal extends Modal {
     this.plugin = plugin;
     this.opts = opts || {};
     this.recorder = new Recorder();
-    this.state = 'idle'; // idle | recording | review | saving
+    this.state = 'idle'; // idle | recording | paused | review | saving
     this.result = null;
     // Where "current note" points, captured before the modal takes focus.
     this.target = plugin.captureTarget();
@@ -383,9 +414,16 @@ class RecordModal extends Modal {
     const meter = contentEl.createDiv({ cls: 'qvn-meter' });
     this.meterFill = meter.createDiv({ cls: 'qvn-meter-fill' });
 
-    this.bigBtn = contentEl.createEl('button', { cls: 'qvn-big', attr: { 'aria-label': 'Record' } });
+    // Big button records, then stops. A smaller pause button appears beside
+    // it while recording (hidden where MediaRecorder can't pause).
+    this.controlsEl = contentEl.createDiv({ cls: 'qvn-controls' });
+    this.bigBtn = this.controlsEl.createEl('button', { cls: 'qvn-big', attr: { 'aria-label': 'Record' } });
     setIcon(this.bigBtn, 'mic');
     this.bigBtn.addEventListener('click', () => this.onBigButton());
+    this.pauseBtn = this.controlsEl.createEl('button', { cls: 'qvn-pause', attr: { 'aria-label': 'Pause' } });
+    setIcon(this.pauseBtn, 'pause');
+    this.pauseBtn.addEventListener('click', () => this.togglePause());
+    this.pauseBtn.hide();
 
     this.reviewEl = contentEl.createDiv({ cls: 'qvn-review' });
     this.reviewEl.hide();
@@ -419,7 +457,35 @@ class RecordModal extends Modal {
 
   async onBigButton() {
     if (this.state === 'idle') return this.startRecording();
-    if (this.state === 'recording') return this.stopRecording();
+    if (this.state === 'recording' || this.state === 'paused') return this.stopRecording();
+  }
+
+  get isLive() { return this.state === 'recording' || this.state === 'paused'; }
+
+  togglePause() {
+    if (this.state === 'recording') return this.pauseRecording();
+    if (this.state === 'paused') return this.resumeRecording();
+  }
+
+  pauseRecording() {
+    if (this.state !== 'recording' || !this.recorder.pause()) return;
+    this.state = 'paused';
+    this.bigBtn.addClass('is-paused');
+    this.pauseBtn.addClass('is-paused');
+    this.pauseBtn.setAttribute('aria-label', 'Resume');
+    setIcon(this.pauseBtn, 'play');
+    this.meterFill.style.width = '0%';
+    this.statusEl.setText('Paused');
+  }
+
+  resumeRecording() {
+    if (this.state !== 'paused' || !this.recorder.resume()) return;
+    this.state = 'recording';
+    this.bigBtn.removeClass('is-paused');
+    this.pauseBtn.removeClass('is-paused');
+    this.pauseBtn.setAttribute('aria-label', 'Pause');
+    setIcon(this.pauseBtn, 'pause');
+    this.statusEl.setText('Recording…');
   }
 
   async startRecording() {
@@ -438,6 +504,7 @@ class RecordModal extends Modal {
     setIcon(this.bigBtn, 'square');
     this.statusEl.removeClass('qvn-error');
     this.statusEl.setText('Recording…');
+    if (Recorder.canPause) this.pauseBtn.show();
     const limitMs = Math.max(0, Number(this.plugin.settings.maxRecordingMinutes) || 0) * 60 * 1000;
     this.timer = window.setInterval(() => {
       const ms = this.recorder.elapsedMs;
@@ -445,23 +512,25 @@ class RecordModal extends Modal {
       if (limitMs && ms >= limitMs && this.state === 'recording') {
         new Notice('Reached the ' + this.plugin.settings.maxRecordingMinutes + ' minute limit reached, saving.');
         this.stopRecording();
-      } else if (limitMs && limitMs - ms <= 60 * 1000 && limitMs - ms > 59 * 1000) {
+      } else if (limitMs && this.state === 'recording' && limitMs - ms <= 60 * 1000 && limitMs - ms > 59 * 1000) {
         this.statusEl.setText('One minute left');
       }
     }, 250);
     const tick = () => {
-      if (this.state !== 'recording') return;
-      this.meterFill.style.width = Math.round(this.recorder.level() * 100) + '%';
+      if (!this.isLive) return;
+      if (this.state === 'recording') this.meterFill.style.width = Math.round(this.recorder.level() * 100) + '%';
       this.raf = window.requestAnimationFrame(tick);
     };
     tick();
   }
 
   async stopRecording() {
-    if (this.state !== 'recording') return;
+    if (!this.isLive) return;
     this.state = 'review';
     this.stopTimers();
+    this.pauseBtn.hide();
     this.bigBtn.removeClass('is-recording');
+    this.bigBtn.removeClass('is-paused');
     this.bigBtn.disabled = true;
     this.statusEl.setText('Finishing…');
     this.result = await this.recorder.stop();
@@ -518,7 +587,7 @@ class RecordModal extends Modal {
 
   onClose() {
     this.stopTimers();
-    if (this.state === 'recording') this.recorder.discard();
+    if (this.isLive) this.recorder.discard();
     this.recorder.cleanup();
     this.contentEl.empty();
     this.plugin.activeModal = null;
@@ -576,6 +645,16 @@ class QuickVoiceNotePlugin extends Plugin {
       id: 'record-now',
       name: 'Start recording immediately',
       callback: () => this.openRecorder({ autoStart: true }),
+    });
+    this.addCommand({
+      id: 'pause-resume',
+      name: 'Pause or resume recording',
+      checkCallback: (checking) => {
+        const m = this.activeModal;
+        if (!m || !m.isLive) return false;
+        if (!checking) m.togglePause();
+        return true;
+      },
     });
     this.addCommand({
       id: 'open-daily-note',
@@ -636,7 +715,7 @@ class QuickVoiceNotePlugin extends Plugin {
   openRecorder(opts) {
     if (this.activeModal) {
       // Second launch while open: treat as "stop" if recording, else focus.
-      if (this.activeModal.state === 'recording') this.activeModal.stopRecording();
+      if (this.activeModal.isLive) this.activeModal.stopRecording();
       return this.activeModal;
     }
     this.activeModal = new RecordModal(this, opts);

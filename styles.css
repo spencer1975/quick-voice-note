@@ -77,6 +77,34 @@
   animation: qvn-pulse 1.4s ease-in-out infinite;
 }
 .qvn-big:disabled { opacity: 0.5; cursor: default; animation: none; }
+.qvn-big.is-paused { animation: none; }
+
+/* Stop + pause sit side by side while recording. The pause button matches
+   the stop button in size but stays neutral, and is hidden until recording
+   starts. */
+.qvn-controls { display: flex; align-items: center; justify-content: center; gap: 16px; }
+.qvn-pause {
+  width: 112px;
+  height: 112px;
+  border-radius: 50%;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: var(--shadow-s);
+  padding: 0;
+}
+.qvn-pause svg { width: 44px; height: 44px; }
+.qvn-pause:hover { background: var(--background-modifier-hover); }
+.qvn-pause:active { transform: scale(0.96); }
+.qvn-pause.is-paused {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: transparent;
+}
 
 @keyframes qvn-pulse {
   0%   { box-shadow: 0 0 0 0 rgba(var(--color-red-rgb), 0.45); }
@@ -99,6 +127,8 @@
 
 .is-mobile .qvn-big { width: 140px; height: 140px; }
 .is-mobile .qvn-big svg { width: 56px; height: 56px; }
+.is-mobile .qvn-pause { width: 140px; height: 140px; }
+.is-mobile .qvn-pause svg { width: 56px; height: 56px; }
 .is-mobile .qvn-timer { font-size: 3em; }
 
 /* "Voice callout" memo style: > [!voice] …

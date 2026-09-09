@@ -32,6 +32,8 @@ for it tonight.
 - **One tap from your pocket:** point an iOS Shortcut, Android shortcut, or an
   NFC tag at `obsidian://voice-note` and Obsidian opens with recording already
   running. One tap stops and saves.
+- **Pause:** a pause button sits beside stop. Paused time doesn't count
+  towards the clock or the safety limit; tap again to pick up where you were.
 - Stopping saves the audio into your vault (`Recordings/` by default),
   transcribes it, and adds the entry to today's daily note (respecting
   your Daily Notes folder, format, and template) or to the note you're in.

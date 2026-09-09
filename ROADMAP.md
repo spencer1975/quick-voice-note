@@ -16,5 +16,6 @@ In build order. Each item earns something on its own.
 Parked until validated: a direct app with a broader feature set; enterprise/Teams/warehouse integrations.
 
 ## Done
+- 0.7.1 — pause and resume while recording.
 - 0.6.x — header mic on mobile, save to current note, audio/style options, callout colour, max recording length.
 - 0.5.7 — first public release, iOS shortcut working end to end.
