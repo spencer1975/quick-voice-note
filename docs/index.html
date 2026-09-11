@@ -83,11 +83,10 @@
   .hero-note { margin-top: 18px; font-size: 13.5px; color: var(--muted); opacity: 0; animation: fade 1s var(--ease) 1s forwards; }
   .hero-note b { color: var(--text); font-weight: 600; }
 
-  /* waveform backdrop */
-  .wave { position: absolute; inset: 0; z-index: 1; pointer-events: none; display: flex; align-items: center; gap: 6px; padding: 0 4vw; opacity: .55;
+  /* ambient backdrop: Seedance loop over its own poster, masked so it fades out at the edges */
+  .wave { position: absolute; inset: 0; z-index: 1; pointer-events: none; opacity: .65; background: url(img/hero-poster.jpg) center / cover no-repeat;
     -webkit-mask-image: radial-gradient(ellipse 75% 65% at 62% 50%, #000 30%, transparent 78%); mask-image: radial-gradient(ellipse 75% 65% at 62% 50%, #000 30%, transparent 78%); }
-  .wave i { flex: 1; height: 12%; border-radius: 999px; background: linear-gradient(180deg, rgba(167,139,250,.9), rgba(124,58,237,.35)); transform-origin: center; animation: bar 2.4s ease-in-out infinite; }
-  @keyframes bar { 0%, 100% { transform: scaleY(.3); } 50% { transform: scaleY(1); } }
+  .wave-video { display: block; width: 100%; height: 100%; object-fit: cover; }
   .hero-fade { position: absolute; inset: 0; z-index: 2; pointer-events: none;
     background: linear-gradient(90deg, var(--ground) 0%, rgba(14,12,20,.92) 30%, rgba(14,12,20,.3) 60%, rgba(14,12,20,.1) 100%), linear-gradient(180deg, var(--ground) 0%, transparent 20%, transparent 78%, var(--ground) 100%); }
 
@@ -249,7 +248,7 @@
     .cta-row .btn { flex: 1 1 100%; justify-content: center; text-align: center; }
     .hero-note { font-size: 13px; margin-top: 14px; }
     .hero-fade { background: linear-gradient(180deg, var(--ground) 0%, rgba(14,12,20,.55) 40%, rgba(14,12,20,.7) 100%); }
-    .wave { opacity: .42; padding: 0 2vw; gap: 4px; }
+    .wave { opacity: .5; }
     .phone { width: 236px; border-radius: 40px; padding: 9px; }
     .float { font-size: 11px; padding: 6px 10px; }
     .float.a { right: 0; } .float.b { left: 0; }
@@ -273,7 +272,8 @@
   }
   @media (prefers-reduced-motion: reduce) {
     html { scroll-behavior: auto; }
-    .grain, .ticker .track, .wave i, .toast .eq i, .float, .promptbar .dot, .bar2 .mic { animation: none !important; }
+    .grain, .ticker .track, .toast .eq i, .float, .promptbar .dot, .bar2 .mic { animation: none !important; }
+    .wave-video { display: none; }
     h1 .w, .promptbar, .lede, .cta-row, .hero-note, .phone-wrap { animation: none !important; opacity: 1; transform: none; }
     .reveal { opacity: 1; transform: none; transition: none; }
     .glow { display: none !important; }
@@ -300,7 +300,11 @@
 </nav>
 
 <header class="hero">
-  <div class="wave" id="wave" aria-hidden="true"></div>
+  <div class="wave" aria-hidden="true">
+    <video class="wave-video" id="wave-video" autoplay muted loop playsinline preload="metadata" poster="img/hero-poster.jpg" disablepictureinpicture>
+      <source src="img/hero-loop.mp4" type="video/mp4">
+    </video>
+  </div>
   <div class="hero-fade" aria-hidden="true"></div>
   <div class="wrap">
     <div class="hero-copy">
@@ -541,15 +545,11 @@ obsidian://voice-note?autostart=0</pre>
     // words inside the .v span inherit its colour
     h.querySelectorAll('.v .w').forEach(function (w) { w.classList.add('v'); });
   })();
-  // waveform bars
+  // backdrop video: leave the poster still for reduced motion or data saver
   (function () {
-    var w = document.getElementById('wave'); if (!w) return;
-    for (var i = 0; i < 90; i++) {
-      var b = document.createElement('i');
-      var h = 8 + Math.round(Math.abs(Math.sin(i * .35)) * 60 + Math.random() * 20);
-      b.style.height = h + '%'; b.style.animationDelay = (-(i * .07) % 2.4) + 's'; b.style.animationDuration = (1.8 + Math.random() * 1.6) + 's';
-      w.appendChild(b);
-    }
+    var v = document.getElementById('wave-video'); if (!v) return;
+    var still = matchMedia('(prefers-reduced-motion: reduce)').matches || (navigator.connection && navigator.connection.saveData);
+    if (still) { v.removeAttribute('autoplay'); v.pause(); v.preload = 'none'; }
   })();
   // ticker duplicate
   (function () { var t = document.getElementById('track'); if (t) t.innerHTML += t.innerHTML; })();
